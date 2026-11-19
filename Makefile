@@ -7,7 +7,11 @@ VERSION_FLAG = -DQLBROWSE_VERSION='"$(shell cat VERSION)"'
 .PHONY: all package host test
 all: package
 
-package: build/dist/qlbrowse
+package: build/dist/qlbrowse build/dist/LICENSE
+
+build/dist/LICENSE: LICENSE
+	mkdir -p build/dist
+	cp $< $@
 
 build/qdos/qlbrowse: $(SOURCES) $(HEADERS)
 	mkdir -p build/qdos

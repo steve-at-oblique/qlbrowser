@@ -189,3 +189,12 @@ host sockets. It checks the executable header, the two-page navigation
 sequence through a redirect and chunked response, Back restoring the final URL without another request, recovery from HTTP errors, HTTPS certificate hostname rejection,
 larger pages, RSS navigation, and article extraction. The test needs OpenSSL to generate a temporary certificate. The
 QIMSI tests check the QDOS console, QDOS I/O traps and USB driver path.
+
+## License
+
+Copyright 2026 Steve Jennen. See the [BSD 2-Clause License](LICENSE).
+
+The executable packager in `tools/package_qdos.py` comes from Steve
+Jennen's QLVI project and retains its original notice. QLTCPIP is a
+separate project. The QDOS build uses the QDOS GCC toolchain and its
+runtime libraries.
