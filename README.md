@@ -128,6 +128,23 @@ Enter `https://text.npr.org/`, choose a numbered headline, and enter
 exercise its redirect to HTTPS. Plain HTTP still goes straight through
 QLTCPIP, including the port-8000 fixture.
 
+## BBC News RSS and articles
+
+The user confirmed that the BBC RSS milestone worked on the QIMSI Gold.
+The desktop test also verified opening a live BBC article from the feed
+and returning with Back.
+
+Update both the executable and the Linux HTTPS helper, then restart the
+helper using the instructions above. On the QL, enter
+`https://feeds.bbci.co.uk/news/rss.xml`. The helper converts RSS 2.0 to
+HTML with numbered headlines and summaries. Choose a written story
+(video entries also appear in the BBC feed), then press `B` to return.
+
+For HTTPS HTML over 256 KiB, the helper can read up to 4 MiB and extract
+headings and text from HTML articles. This keeps large scripts and page
+furniture off the serial link. Oversized pages without a usable article
+still return a size error.
+
 ## Controls and scope
 
 Type a URL or press `O` and Return for a dedicated URL prompt. Enter a
@@ -137,7 +154,7 @@ and up by one screen. `Q` quits. Use Backspace or the QL's Ctrl+Left key
 to erase input. Escape clears the current prompt.
 
 The browser uses HTTP/1.1 GET and displays simple HTML or plain text
-from 200 responses, up to 32 KiB each. It displays ASCII text and supports
+from 200 responses, up to 256 KiB each. It displays ASCII text and supports
 relative and absolute HTTP links, follows up to five HTTP or HTTPS redirects,
 and decodes chunked responses. Compressed responses and in-page fragment
 navigation are outside the current scope.
@@ -145,6 +162,6 @@ navigation are outside the current scope.
 Run `make test` for a loopback smoke test using the same browser core with
 host sockets. It checks the executable header, the two-page navigation
 sequence through a redirect and chunked response, Back refetching the final
-URL, recovery from HTTP errors, HTTPS navigation, and certificate hostname
-rejection. The test needs OpenSSL to generate a temporary certificate. The
+URL, recovery from HTTP errors, HTTPS certificate hostname rejection,
+larger pages, RSS navigation, and article extraction. The test needs OpenSSL to generate a temporary certificate. The
 QIMSI tests check the QDOS console, QDOS I/O traps and USB driver path.

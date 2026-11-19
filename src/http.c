@@ -189,7 +189,7 @@ static const char *read_chunked(long channel, char *body, char *line, int size)
         while ((digit = hex_digit(*p)) >= 0) {
             count = count * 16 + digit;
             if (count > (unsigned long)(BODY_LIMIT - used))
-                return "Page exceeds 32 KiB.";
+                return "Page exceeds 256 KiB.";
             ++p;
         }
         if (p == line)
@@ -246,7 +246,7 @@ static const char *response(long channel, char *body, int *html, char *location,
     if (secure && status == 502)
         return "HTTPS helper could not load the remote page.";
     if (secure && status == 413)
-        return "Page exceeds 32 KiB.";
+        return "Page exceeds 256 KiB.";
     if (status != 200 && !redirect) {
         sprintf(body, "HTTP status %d. This build expects 200 OK.", status);
         return body;
@@ -310,7 +310,7 @@ static const char *response(long channel, char *body, int *html, char *location,
         return read_chunked(channel, body, line, sizeof(line));
     }
     if (length > BODY_LIMIT)
-        return "Page exceeds 32 KiB.";
+        return "Page exceeds 256 KiB.";
 
     while (length < 0 || used < length) {
         c = tcp_byte(channel);
@@ -319,7 +319,7 @@ static const char *response(long channel, char *body, int *html, char *location,
         if (c < 0)
             return stream_error(c);
         if (used == BODY_LIMIT)
-            return "Page exceeds 32 KiB.";
+            return "Page exceeds 256 KiB.";
         body[used++] = c ? (char)c : ' ';
     }
     body[used] = 0;

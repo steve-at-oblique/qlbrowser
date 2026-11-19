@@ -2,15 +2,115 @@
 """Fetch HTTPS pages for qlbrowse using the Linux host's TLS trust store."""
 import argparse
 import http.client
+from html import escape
+from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import re
 import ssl
-from urllib.parse import urlsplit
+import unicodedata
+from urllib.parse import urljoin, urlsplit
+import xml.etree.ElementTree as ET
 
 PORT = 8787
-BODY_LIMIT = 32768
+BODY_LIMIT = 256 * 1024
+SOURCE_LIMIT = 4 * 1024 * 1024
+XML_TYPES = {"application/rss+xml", "application/xml", "text/xml"}
+PUNCTUATION = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"',
+                            "–": "-", "—": "-", "…": "...", "\xa0": " "})
 REDIRECTS = {301, 302, 303, 307, 308}
 AUTHORITY = re.compile(r"[A-Za-z0-9.-]{1,128}(?::[0-9]{1,5})?")
+
+
+def html_text(text):
+    text = " ".join(text.split()).translate(PUNCTUATION)
+    return escape(unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode())
+
+
+class FeedTree(ET.TreeBuilder):
+    def doctype(self, name, pubid, system):
+        raise ValueError("RSS document contains a DTD")
+
+
+def rss_page(body, address):
+    root = ET.fromstring(body, parser=ET.XMLParser(target=FeedTree()))
+    channel = root.find("channel") if root.tag == "rss" else None
+    if channel is None:
+        return None
+    parts = [f'<h1>{html_text(channel.findtext("title", "News feed"))}</h1>']
+    for item in channel.findall("item")[:99]:
+        title = html_text(item.findtext("title", "").strip() or "Untitled story")
+        reference = item.findtext("link", "").strip()
+        link = urljoin(address, reference)
+        if reference and urlsplit(link).scheme in ("http", "https"):
+            title = f'<a href="{escape(link, quote=True)}">{title}</a>'
+        parts.append(f"<h2>{title}</h2>")
+        summary = html_text(item.findtext("description", ""))
+        if summary:
+            parts.append(f"<p>{summary}</p>")
+    return "\n".join(parts).encode("ascii", "xmlcharrefreplace")
+
+
+class ArticleText(HTMLParser):
+    blocks = {"h1", "h2", "h3", "p", "li", "blockquote"}
+    omitted = {"aside", "figure", "footer", "nav", "script", "style", "noscript"}
+
+    def __init__(self):
+        super().__init__()
+        self.depth = 0
+        self.hidden = []
+        self.block = None
+        self.text = []
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if self.hidden:
+            if tag in self.omitted:
+                self.hidden.append(tag)
+        elif tag == "article":
+            self.depth += 1
+        elif self.depth and tag in self.omitted:
+            self.hidden.append(tag)
+        elif self.depth and tag in self.blocks:
+            self.finish_block()
+            self.block = tag
+        elif self.block and tag == "br":
+            self.text.append(" ")
+
+    def handle_endtag(self, tag):
+        if self.hidden:
+            if tag == self.hidden[-1]:
+                self.hidden.pop()
+        elif self.depth and tag == "article":
+            self.finish_block()
+            self.depth -= 1
+        elif tag == self.block:
+            self.finish_block()
+
+    def handle_data(self, data):
+        if self.block and not self.hidden:
+            self.text.append(data)
+
+    def finish_block(self):
+        if self.block:
+            text = html_text("".join(self.text))
+            if text:
+                self.parts.append((self.block, text))
+        self.text.clear()
+        self.block = None
+
+
+def article_page(body, content_type):
+    charset = re.search(r'charset\s*=\s*["\']?([\w.-]+)', content_type, re.I)
+    parser = ArticleText()
+    try:
+        text = body.decode(charset[1] if charset else "utf-8", "replace")
+    except (LookupError, UnicodeError):
+        return None
+    parser.feed(text)
+    parser.close()
+    if not {"h1", "p"}.issubset(tag for tag, _ in parser.parts):
+        return None
+    return "\n".join(f"<{tag}>{text}</{tag}>" for tag, text in parser.parts).encode("ascii")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -55,18 +155,30 @@ class Handler(BaseHTTPRequestHandler):
                     encoding = response.getheader("Content-Encoding", "identity")
                     if not self.safe_value(content_type) or not self.safe_value(encoding):
                         raise ValueError("invalid HTTPS response headers")
-                    # The QL renderer uses only the media type.
-                    fields["Content-Type"] = content_type.split(";", 1)[0].strip().lower()
+                    media_type = content_type.split(";", 1)[0].strip().lower()
+                    fields["Content-Type"] = media_type
                     fields["Content-Encoding"] = encoding
                     transfer = response.getheader("Transfer-Encoding")
                     if transfer and not response.chunked:
                         raise ValueError("unsupported upstream transfer encoding")
-                    body = response.read(BODY_LIMIT + 1)
+                    transformable = (encoding.lower() == "identity" and
+                                     (media_type == "text/html" or media_type in XML_TYPES))
+                    limit = SOURCE_LIMIT if transformable else BODY_LIMIT
+                    body = response.read(limit + 1)
+                    if len(body) <= limit:
+                        if response.length:
+                            raise ValueError("incomplete upstream response")
+                        converted = None
+                        if transformable and media_type in XML_TYPES:
+                            converted = rss_page(body, self.path)
+                        elif transformable and len(body) > BODY_LIMIT:
+                            converted = article_page(body, content_type)
+                        if converted is not None:
+                            fields["Content-Type"] = "text/html"
+                            body = converted
                     if len(body) > BODY_LIMIT:
                         status, fields, body = 413, {}, b""
-                    elif response.length:
-                        raise ValueError("incomplete upstream response")
-        except (OSError, ValueError, http.client.HTTPException) as exc:
+        except (OSError, ValueError, ET.ParseError, http.client.HTTPException) as exc:
             self.log_error("HTTPS fetch failed for %s: %s", url.hostname, exc)
             self.reply(502)
             return

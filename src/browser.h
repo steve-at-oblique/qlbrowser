@@ -3,7 +3,7 @@
 
 #define URL_SIZE 512
 #define HOST_SIZE 129
-#define BODY_LIMIT 32768
+#define BODY_LIMIT 262144
 #define HTTPS_HELPER_PORT 8787
 #define WIDTH 58
 #define PAGE_LINES 19
