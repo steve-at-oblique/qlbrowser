@@ -10,11 +10,11 @@ char *_endmsg = NULL;
 long _stack = 8192;
 static chanid_t console;
 
-long tcp_open(const struct url *url)
+long tcp_open(const char *host, unsigned port)
 {
     char device[HOST_SIZE + 11];
 
-    sprintf(device, "TCP_%s:%u", url->host, url->port);
+    sprintf(device, "TCP_%s:%u", host, port);
     return io_open(device, 0);
 }
 
@@ -126,18 +126,18 @@ int console_line(char *buffer, int size)
 static unsigned char received[4096];
 static int offset, available;
 
-long tcp_open(const struct url *url)
+long tcp_open(const char *host, unsigned port)
 {
     struct addrinfo hints, *addresses, *address;
     struct timeval wait;
-    char port[6];
+    char service[6];
     int channel = -1;
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    sprintf(port, "%u", url->port);
-    if (getaddrinfo(url->host, port, &hints, &addresses))
+    sprintf(service, "%u", port);
+    if (getaddrinfo(host, service, &hints, &addresses))
         return -1;
     wait.tv_sec = 10;
     wait.tv_usec = 0;

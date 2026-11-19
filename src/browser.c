@@ -254,7 +254,7 @@ static void display(const char *message)
         console_write(start, end - start);
         show(*end ? "[More below]\n" : "\n");
     } else {
-        show("qlbrowse\nEnter an http:// URL.\n\n");
+        show("qlbrowse\nEnter an HTTP or HTTPS URL.\n\n");
     }
     if (message) {
         show(message);
@@ -272,7 +272,7 @@ static const char *navigate(const char *address, int back)
     int html;
 
     if (!parse_url(address, &url))
-        return "Enter a valid http:// URL.";
+        return "Enter a valid HTTP or HTTPS URL.";
     strcpy(requested, address);
     if ((error = fetch(&url, requested, body, &html)) != NULL)
         return error;

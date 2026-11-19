@@ -99,6 +99,35 @@ response. Enter `1` to reach page two in the same directory. Enter `B`
 to reload the final page-one URL. The fixture log should show `/start`
 once, followed by requests for page one, page two and page one again.
 
+## Host-assisted HTTPS on Linux
+
+The user verified on the QIMSI Gold that the NPR Text-Only homepage loads,
+numbered headlines open, and Back returns to the headline list over
+repeated attempts. With the NPR page still open, the user restarted the
+Linux QLTCPIP daemon and then the HTTPS helper. Headline navigation and
+Back worked again without relaunching qlbrowse.
+
+Copy `tools/https_helper.py` to `~/dev/qlbrowser/tools/` on the **same
+Linux box that runs the QLTCPIP daemon**. Python 3 is sufficient. Leave
+the daemon running and start the helper in a separate terminal.
+
+```sh
+cd ~/dev/qlbrowser
+python3 tools/https_helper.py
+```
+
+The helper listens only on Linux loopback at `127.0.0.1:8787`. It uses
+the host's trusted CA store and checks the remote certificate and hostname.
+It accepts HTTPS GET requests from qlbrowse and sends the response over
+the existing QL-to-host serial link. TLS protects the Linux-to-site leg.
+Use `--ca-file PATH` to add a CA for a private HTTPS site.
+
+On the QL, install the updated executable and run `EX win1_qlbrowse`.
+Enter `https://text.npr.org/`, choose a numbered headline, and enter
+`B` to return. You can also start with `http://text.npr.org/` to
+exercise its redirect to HTTPS. Plain HTTP still goes straight through
+QLTCPIP, including the port-8000 fixture.
+
 ## Controls and scope
 
 Type a URL or press `O` and Return for a dedicated URL prompt. Enter a
@@ -109,12 +138,13 @@ to erase input. Escape clears the current prompt.
 
 The browser uses HTTP/1.1 GET and displays simple HTML or plain text
 from 200 responses, up to 32 KiB each. It displays ASCII text and supports
-relative and absolute HTTP links, follows up to five plain HTTP redirects,
-and decodes chunked responses. It currently lacks TLS, compressed responses
-and in-page fragment navigation.
+relative and absolute HTTP links, follows up to five HTTP or HTTPS redirects,
+and decodes chunked responses. Compressed responses and in-page fragment
+navigation are outside the current scope.
 
 Run `make test` for a loopback smoke test using the same browser core with
 host sockets. It checks the executable header, the two-page navigation
 sequence through a redirect and chunked response, Back refetching the final
-URL, and recovery from HTTP errors. The QIMSI
-test above checks the QDOS console, QDOS I/O traps and USB driver path.
+URL, recovery from HTTP errors, HTTPS navigation, and certificate hostname
+rejection. The test needs OpenSSL to generate a temporary certificate. The
+QIMSI tests check the QDOS console, QDOS I/O traps and USB driver path.

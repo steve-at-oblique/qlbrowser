@@ -21,12 +21,15 @@ int parse_url(const char *input, struct url *url)
     const char *host, *p, *end;
     unsigned long port;
 
-    if (strlen(input) >= URL_SIZE || strncmp(input, "http://", 7))
+    if (strlen(input) >= URL_SIZE)
+        return 0;
+    url->secure = !strncmp(input, "https://", 8);
+    if (!url->secure && strncmp(input, "http://", 7))
         return 0;
     for (p = input; *p; ++p)
         if ((unsigned char)*p <= 32 || (unsigned char)*p >= 127 || *p == '\\')
             return 0;
-    host = input + 7;
+    host = input + 7 + url->secure;
     p = host;
     while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
            (*p >= '0' && *p <= '9') || *p == '.' || *p == '-')
@@ -35,7 +38,7 @@ int parse_url(const char *input, struct url *url)
         return 0;
     memcpy(url->host, host, p - host);
     url->host[p - host] = 0;
-    port = 80;
+    port = url->secure ? 443 : 80;
     if (*p == ':') {
         ++p;
         if (!isdigit((unsigned char)*p))
@@ -93,18 +96,19 @@ static void normalize_path(char *path)
 int resolve_url(const struct url *base, const char *link, char *output)
 {
     struct url checked;
-    char origin[HOST_SIZE + 15], path[URL_SIZE];
+    char origin[HOST_SIZE + 16], path[URL_SIZE];
     const char *end;
     int prefix = 0, length;
 
     length = strcspn(link, "#");
     if (!length)
         return 0;
-    if (!strncmp(link, "http://", 7) || !strncmp(link, "//", 2)) {
-        prefix = link[0] == '/' ? 5 : 0;
+    if (!strncmp(link, "http://", 7) || !strncmp(link, "https://", 8) ||
+        !strncmp(link, "//", 2)) {
+        prefix = link[0] == '/' ? 5 + base->secure : 0;
         if (prefix + length >= URL_SIZE)
             return 0;
-        memcpy(output, "http:", prefix);
+        memcpy(output, base->secure ? "https:" : "http:", prefix);
         memcpy(output + prefix, link, length);
         output[prefix + length] = 0;
         return parse_url(output, &checked);
@@ -112,7 +116,9 @@ int resolve_url(const struct url *base, const char *link, char *output)
     end = link + strcspn(link, ":/?#");
     if (*end == ':')
         return 0;
-    sprintf(origin, "http://%s:%u", base->host, base->port);
+    sprintf(origin, "%s://%s", base->secure ? "https" : "http", base->host);
+    if (base->port != (base->secure ? 443 : 80))
+        sprintf(origin + strlen(origin), ":%u", base->port);
     if (*link != '/') {
         prefix = strcspn(base->target, "?");
         if (*link != '?')
@@ -221,7 +227,7 @@ static const char *read_chunked(long channel, char *body, char *line, int size)
     return NULL;
 }
 
-static const char *response(long channel, char *body, int *html, char *location)
+static const char *response(long channel, char *body, int *html, char *location, int secure)
 {
     char line[1024], *value, *end;
     long length = -1, parsed;
@@ -237,6 +243,10 @@ static const char *response(long channel, char *body, int *html, char *location)
     status = atoi(line + 9);
     redirect = status == 301 || status == 302 || status == 303 ||
                status == 307 || status == 308;
+    if (secure && status == 502)
+        return "HTTPS helper could not load the remote page.";
+    if (secure && status == 413)
+        return "Page exceeds 32 KiB.";
     if (status != 200 && !redirect) {
         sprintf(body, "HTTP status %d. This build expects 200 OK.", status);
         return body;
@@ -274,10 +284,20 @@ static const char *response(long channel, char *body, int *html, char *location)
         } else if (equal(line, "Content-Encoding") && !equal(value, "identity")) {
             return "Unsupported HTTP content encoding.";
         } else if (equal(line, "Content-Type")) {
-            value[strcspn(value, "; \t")] = 0;
+            end = value;
+            while (*end && *end != ';' && *end != ' ' && *end != '\t')
+                ++end;
+            *end = 0;
             *html = equal(value, "text/html");
-            if (!*html && !equal(value, "text/plain"))
-                return "This build displays HTML and plain text.";
+            if (!*html && !equal(value, "text/plain")) {
+                /* Keep remote control bytes out of the console. */
+                for (end = value; *end; ++end)
+                    if ((unsigned char)*end < 32 || (unsigned char)*end > 126)
+                        *end = '?';
+                sprintf(body, "Unsupported Content-Type: %.28s",
+                        *value ? value : "(empty)");
+                return body;
+            }
         }
     }
     if (n < 0)
@@ -313,23 +333,27 @@ static const char *fetch_once(const struct url *url, char *body, int *html,
     const char *error;
     long channel;
 
-    channel = tcp_open(url);
+    channel = url->secure ? tcp_open("127.0.0.1", HTTPS_HELPER_PORT)
+                          : tcp_open(url->host, url->port);
     if (channel < 0) {
+        if (url->secure)
+            return "Cannot connect to the HTTPS helper on port 8787.";
         sprintf(body, "TCP open failed (%ld). Check the driver, daemon and URL.", channel);
         return body;
     }
-    if (url->port == 80)
+    if (url->port == (url->secure ? 443 : 80))
         strcpy(host, url->host);
     else
         sprintf(host, "%s:%u", url->host, url->port);
     sprintf(request,
-            "GET %s HTTP/1.1\r\nHost: %s\r\n"
+            "GET %s%s%s HTTP/1.1\r\nHost: %s\r\n"
             "Connection: close\r\nAccept-Encoding: identity\r\n\r\n",
+            url->secure ? "https://" : "", url->secure ? host : "",
             url->target, host);
     if (tcp_send(channel, request, strlen(request)) < 0)
         error = "TCP write failed.";
     else
-        error = response(channel, body, html, location);
+        error = response(channel, body, html, location, url->secure);
     tcp_close(channel);
     return error;
 }
@@ -345,8 +369,6 @@ const char *fetch(struct url *url, char *address, char *body, int *html)
         error = fetch_once(url, body, html, location);
         if (error || !*location)
             return error;
-        if (!strncmp(location, "https://", 8))
-            return "This site redirects to HTTPS. TLS is pending.";
         if (redirects++ == MAX_REDIRECTS)
             return "Too many HTTP redirects.";
         if (!resolve_url(url, location, address) || !parse_url(address, url))

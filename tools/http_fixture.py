@@ -9,12 +9,14 @@ FIXTURE = Path(__file__).resolve().parents[1] / "fixture"
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    secure_location = "https://example.org/"
+
     def do_GET(self):
         if self.path in ("/start", "/loop", "/secure"):
             location = {
                 "/start": "pages/index.html",
                 "/loop": "/loop",
-                "/secure": "https://example.org/",
+                "/secure": self.secure_location,
             }[self.path]
             self.send_response(302)
             self.send_header("Location", location)
@@ -32,7 +34,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def serve_chunks(self, page):
         self.send_response(200)
-        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Type", "Text/HTML; charset=utf-8")
         self.send_header("Transfer-Encoding", "chunked")
         self.send_header("Connection", "close")
         self.end_headers()

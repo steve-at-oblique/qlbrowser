@@ -4,12 +4,14 @@
 #define URL_SIZE 512
 #define HOST_SIZE 129
 #define BODY_LIMIT 32768
+#define HTTPS_HELPER_PORT 8787
 #define WIDTH 58
 #define PAGE_LINES 19
 
 struct url {
     char host[HOST_SIZE];
     unsigned port;
+    int secure;
     char target[URL_SIZE];
 };
 
@@ -17,7 +19,7 @@ int parse_url(const char *input, struct url *url);
 int resolve_url(const struct url *base, const char *link, char *output);
 const char *fetch(struct url *url, char *address, char *body, int *html);
 
-long tcp_open(const struct url *url);
+long tcp_open(const char *host, unsigned port);
 int tcp_send(long channel, char *data, int length);
 int tcp_byte(long channel);
 void tcp_close(long channel);
