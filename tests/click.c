@@ -22,14 +22,14 @@ int main(void)
     assert(!click_at(0, 2, command));
     assert(click_at(0, 3, command) && !strcmp(command, "1"));
     assert(click_at(5, 3, command) && !strcmp(command, "1"));
-    assert(click_at(18, 5, command) && !strcmp(command, "n"));
+    assert(click_at(9, 1, command) && !strcmp(command, "n"));
 
     scroll = screen_lines;
     display("HTTP message");
     assert(click_at(0, 2, command) && !strcmp(command, "1"));
     assert(!click_at(strlen("next row "), 2, command));
-    assert(click_at(10, 5, command) && !strcmp(command, "b"));
-    assert(click_at(26, 5, command) && !strcmp(command, "p"));
-    assert(!click_at(15, 5, command));
+    assert(click_at(0, 1, command) && !strcmp(command, "b"));
+    assert(click_at(19, 1, command) && !strcmp(command, "p"));
+    assert(!click_at(6, 1, command));
     return 0;
 }

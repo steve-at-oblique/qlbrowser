@@ -158,10 +158,12 @@ homepage at once.
 Type a URL or press `O` and Return for a dedicated URL prompt. Enter a
 number shown next to a link to follow it. With the SMSQ/E Pointer
 Environment, click the link number or any visible line of its text.
-The on-screen Back, Next, and Prev controls also accept clicks. Press
+The Back, Next, and Prev buttons directly below the URL accept clicks. Press
 `M` and Return to see the last mouse event or the pointer setup status.
 The user verified mouse navigation on the QIMSI Gold with qlbrowse 0.5.0.
 The version and current URL share one header line, also verified on hardware.
+The user verified the top navigation buttons on the QIMSI Gold with
+qlbrowse 0.5.1.
 
 `B` refetches the previous page
 and restores its scroll position when available. `N` and `P` move down

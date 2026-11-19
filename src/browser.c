@@ -14,7 +14,12 @@ static char body[BODY_LIMIT + 1], rendered[RENDER_SIZE];
 static char links[MAX_LINKS][URL_SIZE];
 static int link_start[MAX_LINKS], link_end[MAX_LINKS];
 static const char *visible_start, *visible_end;
-static int controls_row;
+static const struct {
+    const char *label;
+    char key;
+} navigation[] = {
+    {"[Back]", 'b'}, {"[Next]", 'n'}, {"[Prev]", 'p'}
+};
 static char history[HISTORY][URL_SIZE];
 static int history_scroll[HISTORY];
 static char word[MAX_WIDTH];
@@ -280,15 +285,14 @@ static const char *at_line(int line)
 static void display(const char *message)
 {
     static const char title[] = "qlbrowse " QLBROWSE_VERSION;
-    const char *p;
     char heading[MAX_WIDTH + 1];
     int limit;
+    unsigned i;
 
     console_clear();
     visible_start = visible_end = rendered;
-    controls_row = 3;
+    show(title);
     if (depth) {
-        show(title);
         limit = screen_width - (int)strlen(title) - 2;
         if (limit > 3) {
             if (strlen(history[depth - 1]) > (size_t)limit)
@@ -298,24 +302,26 @@ static void display(const char *message)
             show("  ");
             show(heading);
         }
-        show("\n\n");
+    }
+    show("\n");
+    for (i = 0; i < sizeof(navigation) / sizeof(navigation[0]); ++i) {
+        show(navigation[i].label);
+        show(" ");
+    }
+    show(" O Open  Q Quit\n");
+    if (depth) {
         visible_start = at_line(scroll);
         visible_end = at_line(scroll + screen_lines);
         console_write(visible_start, visible_end - visible_start);
-        for (p = visible_start; p < visible_end; ++p)
-            if (*p == '\n')
-                ++controls_row;
         show(*visible_end ? "[More below]\n" : "\n");
     } else {
-        show("qlbrowse " QLBROWSE_VERSION "\nEnter an HTTP or HTTPS URL.\n\n");
+        show("Enter an HTTP or HTTPS URL.\n\n");
     }
     if (message) {
         limit = strlen(message);
         console_write(message, limit > screen_width ? screen_width : limit);
         show("\n");
-        ++controls_row;
     }
-    show("O Open  B Back  N Next  P Prev  Q Quit\n");
     show("URL or link number> ");
 }
 
@@ -324,16 +330,20 @@ static int click_at(int col, int row, char *command)
     const char *line = visible_start, *end;
     int offset, i;
 
-    if (row == controls_row) {
-        if (col >= 8 && col < 14)
-            strcpy(command, "b");
-        else if (col >= 16 && col < 22)
-            strcpy(command, "n");
-        else if (col >= 24 && col < 30)
-            strcpy(command, "p");
-        else
-            return 0;
-        return 1;
+    if (row == 1) {
+        unsigned button;
+        int start = 0, end_col;
+
+        for (button = 0; button < sizeof(navigation) / sizeof(navigation[0]); ++button) {
+            end_col = start + strlen(navigation[button].label);
+            if (col >= start && col < end_col) {
+                command[0] = navigation[button].key;
+                command[1] = 0;
+                return 1;
+            }
+            start = end_col + 1;
+        }
+        return 0;
     }
     if (row < 2)
         return 0;
