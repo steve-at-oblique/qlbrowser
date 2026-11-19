@@ -1,0 +1,37 @@
+#ifndef BROWSER_H
+#define BROWSER_H
+
+#define URL_SIZE 512
+#define HOST_SIZE 129
+#define BODY_LIMIT 32768
+#define WIDTH 58
+#define PAGE_LINES 19
+
+struct url {
+    char host[HOST_SIZE];
+    unsigned port;
+    char target[URL_SIZE];
+};
+
+int parse_url(const char *input, struct url *url);
+int resolve_url(const struct url *base, const char *link, char *output);
+const char *fetch(struct url *url, char *address, char *body, int *html);
+
+long tcp_open(const struct url *url);
+int tcp_send(long channel, char *data, int length);
+int tcp_byte(long channel);
+void tcp_close(long channel);
+
+extern int screen_width, screen_lines;
+
+int console_open(void);
+void console_close(void);
+void console_clear(void);
+void console_write(const char *data, int length);
+int console_line(char *buffer, int size);
+
+#define TCP_EOF (-1)
+#define TCP_ERROR (-2)
+#define TCP_TIMEOUT (-3)
+
+#endif
