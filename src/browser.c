@@ -14,6 +14,8 @@ static char body[BODY_LIMIT + 1], rendered[RENDER_SIZE];
 static char links[MAX_LINKS][URL_SIZE];
 static char history[HISTORY][URL_SIZE];
 static int history_scroll[HISTORY];
+static char word[MAX_WIDTH];
+static int word_length;
 static int link_count, cursor, column, scroll, depth, pending_space;
 
 static void show(const char *text)
@@ -21,7 +23,7 @@ static void show(const char *text)
     console_write(text, strlen(text));
 }
 
-static void newline(void)
+static void line_break(void)
 {
     pending_space = 0;
     if (column) {
@@ -33,21 +35,43 @@ static void newline(void)
 static void emit(int c)
 {
     if (column == screen_width)
-        newline();
+        line_break();
     rendered[cursor++] = (char)c;
     ++column;
+}
+
+static void flush_word(void)
+{
+    int i;
+
+    if (!word_length)
+        return;
+    if (column && column + pending_space + word_length > screen_width)
+        line_break();
+    if (column && pending_space)
+        emit(' ');
+    pending_space = 0;
+    for (i = 0; i < word_length; ++i)
+        emit(word[i]);
+    word_length = 0;
+}
+
+static void newline(void)
+{
+    flush_word();
+    line_break();
 }
 
 static void text_byte(int c)
 {
     if (isspace((unsigned char)c)) {
+        flush_word();
         pending_space = column != 0;
         return;
     }
-    if (pending_space && column < screen_width)
-        emit(' ');
-    pending_space = 0;
-    emit(c >= 32 && c < 127 ? c : '?');
+    if (word_length == screen_width)
+        flush_word();
+    word[word_length++] = c >= 32 && c < 127 ? c : '?';
 }
 
 static int name_is(const char *p, int n, const char *name)
@@ -130,6 +154,7 @@ static void add_link(const struct url *base, const char *p, const char *end)
         }
         href[n] = 0;
         if (start == stop && resolve_url(base, href, links[link_count])) {
+            flush_word();
             if (column && column + 5 > screen_width)
                 newline();
             else if (column)
@@ -210,7 +235,7 @@ static void render(const struct url *url, int html)
 {
     const unsigned char *p;
 
-    cursor = column = pending_space = link_count = 0;
+    cursor = column = pending_space = word_length = link_count = 0;
     if (html) {
         render_html(url);
     } else {
@@ -239,7 +264,7 @@ static const char *at_line(int line)
 static void display(const char *message)
 {
     const char *start, *end;
-    char heading[WIDTH + 1];
+    char heading[MAX_WIDTH + 1];
     int limit;
 
     console_clear();

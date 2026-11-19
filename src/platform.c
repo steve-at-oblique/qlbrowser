@@ -4,6 +4,7 @@
 
 #ifdef QDOS
 #include <qdos.h>
+#include <qptr.h>
 
 char _prog_name[] = "qlbrowse";
 char *_endmsg = NULL;
@@ -45,17 +46,32 @@ void tcp_close(long channel)
 int console_open(void)
 {
     QLRECT_t size;
+    QLRECT_t window = {512, 256, 0, 0};
+    WM_wsiz_t limits;
 
-    console = io_open("con_480x240a16x8", 0);
+    /* Use the primary console already opened by the C runtime.
+       A second console's pointer limits may be confined to the primary. */
+    console = getchid(0);
     if (console < 0)
         return 0;
+    /* On SMSQ/E a standalone console can use the whole display. */
+    if (!iop_flim(console, -1, &limits) && limits.xsize > 0 && limits.ysize > 0) {
+        window.q_width = limits.xsize;
+        window.q_height = limits.ysize;
+        window.q_x = limits.xorg;
+        window.q_y = limits.yorg;
+    }
+    sd_wdef(console, -1, 0, 0, &window);
     sd_setsz(console, -1, 0, 0);
     sd_setpa(console, -1, 0);
     sd_setin(console, -1, 7);
     if (!sd_chenq(console, -1, &size)) {
-        if (size.q_width > 1 && size.q_width <= screen_width)
+        if (size.q_width > 5) {
             screen_width = size.q_width - 1;
-        if (size.q_height > 5 && size.q_height < screen_lines + 5)
+            if (screen_width > MAX_WIDTH)
+                screen_width = MAX_WIDTH;
+        }
+        if (size.q_height > 5)
             screen_lines = size.q_height - 5;
     }
     return 1;
@@ -63,7 +79,7 @@ int console_open(void)
 
 void console_close(void)
 {
-    io_close(console);
+    /* The C runtime owns the standard channels. */
 }
 
 void console_clear(void)
@@ -73,8 +89,15 @@ void console_clear(void)
 
 void console_write(const char *data, int length)
 {
-    if (length)
-        io_sstrg(console, -1, (void *)data, length);
+    int count;
+
+    while (length > 0) {
+        count = io_sstrg(console, -1, (void *)data, length > 1024 ? 1024 : length);
+        if (count <= 0)
+            return;
+        data += count;
+        length -= count;
+    }
 }
 
 int console_line(char *buffer, int size)

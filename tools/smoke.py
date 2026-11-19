@@ -34,7 +34,8 @@ class Handler(FixtureHandler):
             self.fixture_response(
                 "text/html; charset=utf-8",
                 b"<script>" + b"x" * (300 * 1024) + b"</script>"
-                b"<article><h1>Fixture article</h1><p>Readable article text.</p></article>",
+                b"<article><h1>Fixture article</h1><p>Readable article text.</p><p>"
+                + b"x" * 72 + b" wrap intact</p></article>",
             )
         else:
             super().do_GET()
@@ -122,6 +123,7 @@ def main():
     assert "Large page accepted" in result.stdout, result.stdout
     assert "[1] Fixture headline" in result.stdout and "Fixture summary." in result.stdout
     assert "Readable article text." in result.stdout, result.stdout
+    assert "x" * 72 + " wrap\nintact" in result.stdout, result.stdout
     assert result.stdout.count("Test news feed") == 2, result.stdout
     assert requests == [
         (path, "HTTP/1.1", origin)

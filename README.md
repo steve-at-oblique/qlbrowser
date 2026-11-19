@@ -147,6 +147,14 @@ still return a size error.
 
 ## Controls and scope
 
+On SMSQ/E the browser queries the available display from its primary console and derives the number of
+text columns and page rows from the console's character dimensions. A
+classic QDOS display uses the standard 512 x 256 geometry. HTML prose
+wraps at word boundaries, with hard breaks for words longer than a line.
+The user verified word wrapping and full display coverage in Large Mode 4
+on the QIMSI Gold. The primary console showed the full NPR Text-Only
+homepage at once.
+
 Type a URL or press `O` and Return for a dedicated URL prompt. Enter a
 number shown next to a link to follow it. `B` refetches the previous page
 and restores its scroll position when available. `N` and `P` move down

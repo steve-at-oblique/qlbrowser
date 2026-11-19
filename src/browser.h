@@ -5,7 +5,8 @@
 #define HOST_SIZE 129
 #define BODY_LIMIT 262144
 #define HTTPS_HELPER_PORT 8787
-#define WIDTH 58
+#define WIDTH 79
+#define MAX_WIDTH (URL_SIZE - 1)
 #define PAGE_LINES 19
 
 struct url {
