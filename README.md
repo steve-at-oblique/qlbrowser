@@ -151,6 +151,11 @@ On SMSQ/E the browser queries the available display from its primary console and
 text columns and page rows from the console's character dimensions. A
 classic QDOS display uses the standard 512 x 256 geometry. HTML prose
 wraps at word boundaries, with hard breaks for words longer than a line.
+Paragraphs and linked list entries have blank lines between them. A link
+number replaces the bullet when the link starts a list item. The QL console
+underlines link numbers in lists and the full text of inline links.
+The user verified the improved article and linked-list layouts on the
+QIMSI Gold.
 The user verified word wrapping and full display coverage in Large Mode 4
 on the QIMSI Gold. The primary console showed the full NPR Text-Only
 homepage at once.

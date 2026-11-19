@@ -14,7 +14,8 @@ static char body[BODY_LIMIT + 1];
 struct page {
     char rendered[RENDER_SIZE];
     char links[MAX_LINKS][URL_SIZE];
-    int link_start[MAX_LINKS], link_end[MAX_LINKS], link_count;
+    int link_start[MAX_LINKS], link_end[MAX_LINKS];
+    int marker_end[MAX_LINKS], link_count;
 };
 static struct page pages[2];
 static struct page *page = &pages[0], *previous_page;
@@ -29,7 +30,7 @@ static char history[HISTORY][URL_SIZE];
 static int history_scroll[HISTORY];
 static char word[MAX_WIDTH];
 static int word_length;
-static int cursor, column, scroll, depth, pending_space;
+static int cursor, column, scroll, depth, pending_space, block_gap, list_bullet;
 
 static void show(const char *text)
 {
@@ -45,8 +46,23 @@ static void line_break(void)
     }
 }
 
+static void start_content(void)
+{
+    if (block_gap) {
+        page->rendered[cursor++] = '\n';
+        block_gap = 0;
+    }
+    if (list_bullet) {
+        page->rendered[cursor++] = '-';
+        page->rendered[cursor++] = ' ';
+        column = 2;
+        list_bullet = 0;
+    }
+}
+
 static void emit(int c)
 {
+    start_content();
     if (column == screen_width)
         line_break();
     page->rendered[cursor++] = (char)c;
@@ -129,7 +145,7 @@ static int entity(const char **p)
     return '&';
 }
 
-static int add_link(const struct url *base, const char *p, const char *end)
+static int add_link(const struct url *base, const char *p, const char *end, int in_list)
 {
     const char *name, *start, *stop;
     char href[URL_SIZE], marker[8];
@@ -168,14 +184,17 @@ static int add_link(const struct url *base, const char *p, const char *end)
         href[n] = 0;
         if (start == stop && resolve_url(base, href, page->links[page->link_count])) {
             flush_word();
+            list_bullet = 0;
             if (column && column + 5 > screen_width)
                 newline();
             else if (column)
                 emit(' ');
+            start_content();
             page->link_start[page->link_count] = cursor;
             sprintf(marker, "[%d]", ++page->link_count);
             for (n = 0; marker[n]; ++n)
                 emit(marker[n]);
+            page->marker_end[page->link_count - 1] = in_list ? cursor : 0;
             pending_space = 1;
             return page->link_count;
         }
@@ -187,7 +206,7 @@ static int add_link(const struct url *base, const char *p, const char *end)
 static void render_html(const struct url *base)
 {
     const char *p = body, *name, *attrs, *end, *hidden = NULL;
-    int closing, n, quote, c, active_link = 0;
+    int closing, n, quote, c, active_link = 0, item_links = -1;
 
     while (*p) {
         if (!strncmp(p, "<!--", 4)) {
@@ -242,9 +261,18 @@ static void render_html(const struct url *base)
                 active_link = 0;
             }
             if (!closing)
-                active_link = add_link(base, attrs, end);
-        } else if (name_is(name, n, "p") || name_is(name, n, "br") ||
-                   name_is(name, n, "div") || name_is(name, n, "li") ||
+                active_link = add_link(base, attrs, end, item_links >= 0);
+        } else if (name_is(name, n, "p")) {
+            newline();
+            if (closing && cursor)
+                block_gap = 1;
+        } else if (name_is(name, n, "li")) {
+            newline();
+            if (item_links >= 0 && page->link_count > item_links)
+                block_gap = 1;
+            item_links = closing ? -1 : page->link_count;
+            list_bullet = !closing;
+        } else if (name_is(name, n, "br") || name_is(name, n, "div") ||
                    name_is(name, n, "ul") || name_is(name, n, "ol") ||
                    (n == 2 && tolower((unsigned char)*name) == 'h' &&
                     name[1] >= '1' && name[1] <= '6')) {
@@ -261,7 +289,7 @@ static void render(const struct url *url, int html)
 {
     const unsigned char *p;
 
-    cursor = column = pending_space = word_length = page->link_count = 0;
+    cursor = column = pending_space = block_gap = list_bullet = word_length = page->link_count = 0;
     if (html) {
         render_html(url);
     } else {
@@ -285,6 +313,32 @@ static const char *at_line(int line)
     while (line-- > 0 && (end = strchr(p, '\n')) != NULL)
         p = end + 1;
     return p;
+}
+
+static void display_page(void)
+{
+    const char *p = visible_start, *start, *end;
+    int i;
+
+    for (i = 0; i < page->link_count; ++i) {
+        start = page->rendered + page->link_start[i];
+        end = page->rendered + (page->marker_end[i] ? page->marker_end[i] : page->link_end[i]);
+        if (end <= p)
+            continue;
+        if (start >= visible_end)
+            break;
+        if (start > p) {
+            console_write(p, start - p);
+            p = start;
+        }
+        if (end > visible_end)
+            end = visible_end;
+        console_underline(1);
+        console_write(p, end - p);
+        console_underline(0);
+        p = end;
+    }
+    console_write(p, visible_end - p);
 }
 
 static void display(const char *message)
@@ -317,7 +371,7 @@ static void display(const char *message)
     if (depth) {
         visible_start = at_line(scroll);
         visible_end = at_line(scroll + screen_lines);
-        console_write(visible_start, visible_end - visible_start);
+        display_page();
         show(*visible_end ? "[More below]\n" : "\n");
     } else {
         show("Enter an HTTP or HTTPS URL.\n\n");

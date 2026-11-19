@@ -138,6 +138,11 @@ void console_clear(void)
     sd_clear(console, -1);
 }
 
+void console_underline(int enabled)
+{
+    sd_setul(console, -1, enabled);
+}
+
 void console_write(const char *data, int length)
 {
     int count;
@@ -330,6 +335,11 @@ void console_clear(void)
         fputs("\033[2J\033[H", stdout);
     else
         putchar('\n');
+}
+
+void console_underline(int enabled)
+{
+    (void)enabled;
 }
 
 void console_write(const char *data, int length)
