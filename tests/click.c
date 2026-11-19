@@ -31,5 +31,15 @@ int main(void)
     assert(click_at(0, 1, command) && !strcmp(command, "b"));
     assert(click_at(19, 1, command) && !strcmp(command, "p"));
     assert(!click_at(6, 1, command));
+
+    previous_page = page;
+    page = &pages[1];
+    history_scroll[0] = scroll;
+    depth = 2;
+    scroll = 0;
+    assert(!navigate(history[0], 1));
+    assert(depth == 1 && scroll == screen_lines && !previous_page);
+    display(NULL);
+    assert(click_at(0, 2, command) && !strcmp(command, "1"));
     return 0;
 }

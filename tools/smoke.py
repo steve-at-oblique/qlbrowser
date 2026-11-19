@@ -27,7 +27,8 @@ class Handler(FixtureHandler):
             self.fixture_response("text/plain", b"Large page accepted\n" + b"x" * 65536)
         elif self.path == "/feed.xml":
             self.fixture_response("text/xml", b"""<rss version="2.0"><channel>
-<title>Test news feed</title><item><title>Fixture headline</title>
+<title>Test news feed</title>""" + b"<item><title>Earlier headline</title></item>" * 18
+                                  + b"""<item><title>Fixture headline</title>
 <link>/article?one=1&amp;two=2</link><description>Fixture summary.</description>
 </item></channel></rss>""")
         elif self.path == "/article?one=1&two=2":
@@ -105,7 +106,7 @@ def main():
                    f"http://{origin}/bad-chunk\nhttp://{origin}/loop\n1\nb\n"
                    f"http://{origin}/secure\n1\nb\n"
                    f"https://127.0.0.1:{upstream.server_port}/start\n"
-                   f"http://{origin}/wide\nhttps://{secure_origin}/feed.xml\n1\nb\nq\n"),
+                   f"http://{origin}/wide\nhttps://{secure_origin}/feed.xml\nn\n1\nb\n1\nb\nb\nq\n"),
             capture_output=True, text=True, timeout=15, check=True,
         )
 
@@ -122,25 +123,25 @@ def main():
     assert "Too many HTTP redirects." in result.stdout, result.stdout
     assert f"https://{secure_origin}/pages/second.html" in result.stdout, result.stdout
     assert "HTTPS helper could not load the remote page." in result.stdout, result.stdout
-    assert "Large page accepted" in result.stdout, result.stdout
-    assert "[1] Fixture headline" in result.stdout and "Fixture summary." in result.stdout
+    assert result.stdout.count("Large page accepted") == 2, result.stdout
+    assert result.stdout.count("[1] Fixture headline\nFixture summary.") == 3, result.stdout
     assert "Readable article text." in result.stdout, result.stdout
     assert "x" * 72 + " wrap\nintact" in result.stdout, result.stdout
-    assert result.stdout.count("Test news feed") == 2, result.stdout
+    assert result.stdout.count("Test news feed") == 1, result.stdout
     assert requests == [
         (path, "HTTP/1.1", origin)
         for path in ("/start", "/pages/index.html", "/pages/second.html",
-                     "/pages/index.html", "/missing.html", "/bad-chunk",
-                     *(["/loop"] * 6), "/pages/second.html", "/pages/index.html",
+                     "/missing.html", "/bad-chunk",
+                     *(["/loop"] * 6), "/pages/second.html",
                      "/secure")
     ] + [
         (path, "HTTP/1.1", secure_origin)
-        for path in ("/start", "/pages/index.html", "/pages/second.html", "/pages/index.html")
+        for path in ("/start", "/pages/index.html", "/pages/second.html")
     ] + [("/wide", "HTTP/1.1", origin)] + [
         (path, "HTTP/1.1", secure_origin)
-        for path in ("/feed.xml", "/article?one=1&two=2", "/feed.xml")
-    ], requests
-    print("PASS: QDOS executable metadata, HTTP redirects, chunks, HTTPS verification, larger pages, RSS and article extraction")
+        for path in ("/feed.xml", "/article?one=1&two=2", "/article?one=1&two=2")
+    ] + [("/wide", "HTTP/1.1", origin)], requests
+    print("PASS: QDOS executable metadata, HTTP redirects, chunks, HTTPS verification, larger pages, RSS, article extraction and cached Back")
 
 
 if __name__ == "__main__":

@@ -74,7 +74,7 @@ relaunching the browser or reinstalling the driver.
    **QL browser test - page one** and **[1] Open page two**. Enter `1`
    to follow the link, `B` to return to page one, and `Q` to quit. Press
    Return after each entry. The Linux HTTP log should show 200 responses for
-   `/index.html`, `/second.html` and `/index.html`, in that order.
+   `/index.html` and `/second.html`. Back restores page one from memory.
    Here `127.0.0.1` refers to the Linux daemon host. To serve the fixture
    on a separate Linux box, bind to its LAN address and use that address
    in the URL.
@@ -96,8 +96,8 @@ After launching `EX win1_qlbrowse`, enter
 `http://127.0.0.1:8000/start`. The browser should display page one at
 `/pages/index.html`, reached through a redirect and decoded from a chunked
 response. Enter `1` to reach page two in the same directory. Enter `B`
-to reload the final page-one URL. The fixture log should show `/start`
-once, followed by requests for page one, page two and page one again.
+to restore page one at its final URL. The fixture log should show `/start`
+once, followed by requests for page one and page two.
 
 ## Host-assisted HTTPS on Linux
 
@@ -165,9 +165,12 @@ The version and current URL share one header line, also verified on hardware.
 The user verified the top navigation buttons on the QIMSI Gold with
 qlbrowse 0.5.1.
 
-`B` refetches the previous page
-and restores its scroll position when available. `N` and `P` move down
-and up by one screen. `Q` quits. Use Backspace or the QL's Ctrl+Left key
+`B` restores the previous page from memory, including its scroll position
+and links. A second consecutive Back refetches the older page. The user
+verified fast Back navigation on the QIMSI Gold with qlbrowse 0.6.0.
+
+`N` and `P` move down and up by one screen. `Q` quits. Use Backspace or
+the QL's Ctrl+Left key
 to erase input. Escape clears the current prompt.
 
 The browser uses HTTP/1.1 GET and displays simple HTML or plain text
@@ -178,7 +181,6 @@ navigation are outside the current scope.
 
 Run `make test` for a loopback smoke test using the same browser core with
 host sockets. It checks the executable header, the two-page navigation
-sequence through a redirect and chunked response, Back refetching the final
-URL, recovery from HTTP errors, HTTPS certificate hostname rejection,
+sequence through a redirect and chunked response, Back restoring the final URL without another request, recovery from HTTP errors, HTTPS certificate hostname rejection,
 larger pages, RSS navigation, and article extraction. The test needs OpenSSL to generate a temporary certificate. The
 QIMSI tests check the QDOS console, QDOS I/O traps and USB driver path.

@@ -10,9 +10,14 @@
 
 int screen_width = WIDTH, screen_lines = PAGE_LINES;
 
-static char body[BODY_LIMIT + 1], rendered[RENDER_SIZE];
-static char links[MAX_LINKS][URL_SIZE];
-static int link_start[MAX_LINKS], link_end[MAX_LINKS];
+static char body[BODY_LIMIT + 1];
+struct page {
+    char rendered[RENDER_SIZE];
+    char links[MAX_LINKS][URL_SIZE];
+    int link_start[MAX_LINKS], link_end[MAX_LINKS], link_count;
+};
+static struct page pages[2];
+static struct page *page = &pages[0], *previous_page;
 static const char *visible_start, *visible_end;
 static const struct {
     const char *label;
@@ -24,7 +29,7 @@ static char history[HISTORY][URL_SIZE];
 static int history_scroll[HISTORY];
 static char word[MAX_WIDTH];
 static int word_length;
-static int link_count, cursor, column, scroll, depth, pending_space;
+static int cursor, column, scroll, depth, pending_space;
 
 static void show(const char *text)
 {
@@ -35,7 +40,7 @@ static void line_break(void)
 {
     pending_space = 0;
     if (column) {
-        rendered[cursor++] = '\n';
+        page->rendered[cursor++] = '\n';
         column = 0;
     }
 }
@@ -44,7 +49,7 @@ static void emit(int c)
 {
     if (column == screen_width)
         line_break();
-    rendered[cursor++] = (char)c;
+    page->rendered[cursor++] = (char)c;
     ++column;
 }
 
@@ -130,7 +135,7 @@ static int add_link(const struct url *base, const char *p, const char *end)
     char href[URL_SIZE], marker[8];
     int n, quote;
 
-    if (link_count == MAX_LINKS)
+    if (page->link_count == MAX_LINKS)
         return 0;
     while (p < end) {
         while (p < end && isspace((unsigned char)*p))
@@ -161,18 +166,18 @@ static int add_link(const struct url *base, const char *p, const char *end)
             ++start;
         }
         href[n] = 0;
-        if (start == stop && resolve_url(base, href, links[link_count])) {
+        if (start == stop && resolve_url(base, href, page->links[page->link_count])) {
             flush_word();
             if (column && column + 5 > screen_width)
                 newline();
             else if (column)
                 emit(' ');
-            link_start[link_count] = cursor;
-            sprintf(marker, "[%d]", ++link_count);
+            page->link_start[page->link_count] = cursor;
+            sprintf(marker, "[%d]", ++page->link_count);
             for (n = 0; marker[n]; ++n)
                 emit(marker[n]);
             pending_space = 1;
-            return link_count;
+            return page->link_count;
         }
         return 0;
     }
@@ -233,7 +238,7 @@ static void render_html(const struct url *base)
         } else if (name_is(name, n, "a")) {
             if (active_link) {
                 flush_word();
-                link_end[active_link - 1] = cursor;
+                page->link_end[active_link - 1] = cursor;
                 active_link = 0;
             }
             if (!closing)
@@ -248,7 +253,7 @@ static void render_html(const struct url *base)
     }
     if (active_link) {
         flush_word();
-        link_end[active_link - 1] = cursor;
+        page->link_end[active_link - 1] = cursor;
     }
 }
 
@@ -256,13 +261,13 @@ static void render(const struct url *url, int html)
 {
     const unsigned char *p;
 
-    cursor = column = pending_space = word_length = link_count = 0;
+    cursor = column = pending_space = word_length = page->link_count = 0;
     if (html) {
         render_html(url);
     } else {
         for (p = (const unsigned char *)body; *p; ++p) {
             if (*p == '\n') {
-                rendered[cursor++] = '\n';
+                page->rendered[cursor++] = '\n';
                 column = 0;
             } else if (*p != '\r') {
                 emit(*p == '\t' ? ' ' : *p >= 32 && *p < 127 ? *p : '?');
@@ -270,12 +275,12 @@ static void render(const struct url *url, int html)
         }
     }
     newline();
-    rendered[cursor] = 0;
+    page->rendered[cursor] = 0;
 }
 
 static const char *at_line(int line)
 {
-    const char *p = rendered, *end;
+    const char *p = page->rendered, *end;
 
     while (line-- > 0 && (end = strchr(p, '\n')) != NULL)
         p = end + 1;
@@ -290,7 +295,7 @@ static void display(const char *message)
     unsigned i;
 
     console_clear();
-    visible_start = visible_end = rendered;
+    visible_start = visible_end = page->rendered;
     show(title);
     if (depth) {
         limit = screen_width - (int)strlen(title) - 2;
@@ -354,9 +359,9 @@ static int click_at(int col, int row, char *command)
     end = strchr(line, '\n');
     if (col < 0 || col >= end - line)
         return 0;
-    offset = line - rendered + col;
-    for (i = 0; i < link_count; ++i) {
-        if (offset >= link_start[i] && offset < link_end[i]) {
+    offset = line - page->rendered + col;
+    for (i = 0; i < page->link_count; ++i) {
+        if (offset >= page->link_start[i] && offset < page->link_end[i]) {
             sprintf(command, "%d", i + 1);
             return 1;
         }
@@ -371,11 +376,22 @@ static const char *navigate(const char *address, int back)
     const char *error;
     int html;
 
+    if (back && previous_page) {
+        page = previous_page;
+        previous_page = NULL;
+        --depth;
+        scroll = history_scroll[depth - 1];
+        return NULL;
+    }
     if (!parse_url(address, &url))
         return "Enter a valid HTTP or HTTPS URL.";
     strcpy(requested, address);
     if ((error = fetch(&url, requested, body, &html)) != NULL)
         return error;
+    if (!back && depth) {
+        previous_page = page;
+        page = page == &pages[0] ? &pages[1] : &pages[0];
+    }
     render(&url, html);
     if (back) {
         --depth;
@@ -436,8 +452,8 @@ int main(void)
         } else {
             choice = strtol(input, &end, 10);
             if (end != input && !*end)
-                message = choice > 0 && choice <= link_count
-                          ? navigate(links[choice - 1], 0) : "Unknown link number.";
+                message = choice > 0 && choice <= page->link_count
+                          ? navigate(page->links[choice - 1], 0) : "Unknown link number.";
             else
                 message = navigate(input, 0);
         }
