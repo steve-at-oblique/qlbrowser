@@ -27,11 +27,12 @@ void tcp_close(long channel);
 
 extern int screen_width, screen_lines;
 
+const char *console_pointer_status(void);
 int console_open(void);
 void console_close(void);
 void console_clear(void);
 void console_write(const char *data, int length);
-int console_line(char *buffer, int size);
+int console_line(char *buffer, int size, int (*click)(int, int, char *));
 
 #define TCP_EOF (-1)
 #define TCP_ERROR (-2)

@@ -5,11 +5,38 @@
 #ifdef QDOS
 #include <qdos.h>
 #include <qptr.h>
+#include <stddef.h>
 
 char _prog_name[] = "qlbrowse";
 char *_endmsg = NULL;
 long _stack = 8192;
 static chanid_t console;
+static int cell_width, cell_height, pointer_enabled;
+static short pointer_x, pointer_y;
+static char pointer_status[72] = "Mouse: could not measure character cells.";
+
+/* The main hit area has no subwindows. The keyboard flag preserves
+   Return and Space as keyboard input instead of mapping them to buttons. */
+static struct {
+    void *subwindows;
+    QLRECT_t main_area;
+    unsigned char keyboard, spare;
+    short border_width, border_colour, paper;
+    void *sprite;
+} pointer_definition;
+
+/* IOP.RPTR returns a 24-byte record with window-relative coordinates. */
+struct pointer_record {
+    long channel;
+    short subwindow, x, y;
+    unsigned char key, held;
+    unsigned long events;
+    QLRECT_t window;
+};
+typedef char pointer_record_layout[
+    sizeof(struct pointer_record) == 24 &&
+    offsetof(struct pointer_record, key) == 10 ? 1 : -1
+];
 
 long tcp_open(const char *host, unsigned port)
 {
@@ -45,9 +72,10 @@ void tcp_close(long channel)
 
 int console_open(void)
 {
-    QLRECT_t size;
+    QLRECT_t size, pixels;
     QLRECT_t window = {512, 256, 0, 0};
     WM_wsiz_t limits;
+    int result;
 
     /* Use the primary console already opened by the C runtime.
        A second console's pointer limits may be confined to the primary. */
@@ -63,6 +91,24 @@ int console_open(void)
     }
     sd_wdef(console, -1, 0, 0, &window);
     sd_setsz(console, -1, 0, 0);
+    if (!sd_pos(console, -1, 1, 1) && !sd_pxenq(console, -1, &pixels) &&
+        pixels.q_x && pixels.q_y) {
+        cell_width = pixels.q_x;
+        cell_height = pixels.q_y;
+        result = iop_outl(console, -1, 0, 0, 0, &window);
+        if (result) {
+            sprintf(pointer_status, "Mouse: window outline error %d.", result);
+        } else {
+            pointer_definition.main_area = window;
+            pointer_definition.keyboard = 1;
+            result = iop_swdf(console, -1, &pointer_definition);
+            pointer_enabled = !result;
+            if (result)
+                sprintf(pointer_status, "Mouse: hit area error %d.", result);
+            else
+                strcpy(pointer_status, "Mouse: ready. No button event received yet.");
+        }
+    }
     sd_setpa(console, -1, 0);
     sd_setin(console, -1, 7);
     if (!sd_chenq(console, -1, &size)) {
@@ -71,10 +117,15 @@ int console_open(void)
             if (screen_width > MAX_WIDTH)
                 screen_width = MAX_WIDTH;
         }
-        if (size.q_height > 5)
-            screen_lines = size.q_height - 5;
+        if (size.q_height > 6)
+            screen_lines = size.q_height - 6;
     }
     return 1;
+}
+
+const char *console_pointer_status(void)
+{
+    return pointer_status;
 }
 
 void console_close(void)
@@ -100,14 +151,45 @@ void console_write(const char *data, int length)
     }
 }
 
-int console_line(char *buffer, int size)
+int console_line(char *buffer, int size, int (*click)(int, int, char *))
 {
     char key;
     unsigned char code;
-    int length = 0, status, overflow = 0;
+    int length = 0, status, overflow = 0, matched;
+    struct pointer_record pointer;
 
     sd_cure(console, -1);
-    while (!(status = io_fbyte(console, -1, &key))) {
+    for (;;) {
+        if (pointer_enabled) {
+            /* Wait for a complete keystroke or mouse button stroke. */
+            status = iop_rptr(console, -1, &pointer_x, &pointer_y, 1, &pointer);
+            if (status == ERR_NC)
+                continue;
+            if (status) {
+                pointer_enabled = 0;
+                sprintf(pointer_status, "Mouse: pointer read error %d.", status);
+                continue;
+            }
+            if (!pointer.key)
+                continue;
+            if (pointer.key == 1 || pointer.key == 2) {
+                matched = click && !length && pointer.channel == console &&
+                          pointer.x >= 0 && pointer.y >= 0 &&
+                          click(pointer.x / cell_width, pointer.y / cell_height, buffer);
+                sprintf(pointer_status, "Mouse %d at %d,%d px: %s.", (int)pointer.key,
+                        (int)pointer.x, (int)pointer.y, matched ? "activated" : "no target");
+                if (matched) {
+                    sd_curs(console, -1);
+                    return 1;
+                }
+                continue;
+            }
+            key = (char)pointer.key;
+        } else {
+            status = io_fbyte(console, -1, &key);
+            if (status)
+                break;
+        }
         if (key == 27 || key == '\n' || key == '\r')
             break;
         code = (unsigned char)key;
@@ -228,6 +310,11 @@ void tcp_close(long channel)
     close(channel);
 }
 
+const char *console_pointer_status(void)
+{
+    return "Mouse: available on SMSQ/E.";
+}
+
 int console_open(void)
 {
     return 1;
@@ -250,11 +337,12 @@ void console_write(const char *data, int length)
     fwrite(data, 1, length, stdout);
 }
 
-int console_line(char *buffer, int size)
+int console_line(char *buffer, int size, int (*click)(int, int, char *))
 {
     char *end;
     int c;
 
+    (void)click;
     fflush(stdout);
     if (!fgets(buffer, size, stdin))
         return 0;

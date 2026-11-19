@@ -109,6 +109,8 @@ def main():
             capture_output=True, text=True, timeout=15, check=True,
         )
 
+    version = (ROOT / "VERSION").read_text().strip()
+    assert f"qlbrowse {version}  http://{origin}/pages/second.html\n" in result.stdout
     first = "QL browser test - page one"
     second = "QL browser test - page two"
     assert "[1] Open page two" in result.stdout, result.stdout

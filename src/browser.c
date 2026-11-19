@@ -12,6 +12,9 @@ int screen_width = WIDTH, screen_lines = PAGE_LINES;
 
 static char body[BODY_LIMIT + 1], rendered[RENDER_SIZE];
 static char links[MAX_LINKS][URL_SIZE];
+static int link_start[MAX_LINKS], link_end[MAX_LINKS];
+static const char *visible_start, *visible_end;
+static int controls_row;
 static char history[HISTORY][URL_SIZE];
 static int history_scroll[HISTORY];
 static char word[MAX_WIDTH];
@@ -116,14 +119,14 @@ static int entity(const char **p)
     return '&';
 }
 
-static void add_link(const struct url *base, const char *p, const char *end)
+static int add_link(const struct url *base, const char *p, const char *end)
 {
     const char *name, *start, *stop;
     char href[URL_SIZE], marker[8];
     int n, quote;
 
     if (link_count == MAX_LINKS)
-        return;
+        return 0;
     while (p < end) {
         while (p < end && isspace((unsigned char)*p))
             ++p;
@@ -159,19 +162,22 @@ static void add_link(const struct url *base, const char *p, const char *end)
                 newline();
             else if (column)
                 emit(' ');
+            link_start[link_count] = cursor;
             sprintf(marker, "[%d]", ++link_count);
             for (n = 0; marker[n]; ++n)
                 emit(marker[n]);
             pending_space = 1;
+            return link_count;
         }
-        return;
+        return 0;
     }
+    return 0;
 }
 
 static void render_html(const struct url *base)
 {
     const char *p = body, *name, *attrs, *end, *hidden = NULL;
-    int closing, n, quote, c;
+    int closing, n, quote, c, active_link = 0;
 
     while (*p) {
         if (!strncmp(p, "<!--", 4)) {
@@ -219,8 +225,14 @@ static void render_html(const struct url *base)
             hidden = "style";
         } else if (!closing && name_is(name, n, "head")) {
             hidden = "head";
-        } else if (!closing && name_is(name, n, "a")) {
-            add_link(base, attrs, end);
+        } else if (name_is(name, n, "a")) {
+            if (active_link) {
+                flush_word();
+                link_end[active_link - 1] = cursor;
+                active_link = 0;
+            }
+            if (!closing)
+                active_link = add_link(base, attrs, end);
         } else if (name_is(name, n, "p") || name_is(name, n, "br") ||
                    name_is(name, n, "div") || name_is(name, n, "li") ||
                    name_is(name, n, "ul") || name_is(name, n, "ol") ||
@@ -228,6 +240,10 @@ static void render_html(const struct url *base)
                     name[1] >= '1' && name[1] <= '6')) {
             newline();
         }
+    }
+    if (active_link) {
+        flush_word();
+        link_end[active_link - 1] = cursor;
     }
 }
 
@@ -263,30 +279,79 @@ static const char *at_line(int line)
 
 static void display(const char *message)
 {
-    const char *start, *end;
+    static const char title[] = "qlbrowse " QLBROWSE_VERSION;
+    const char *p;
     char heading[MAX_WIDTH + 1];
     int limit;
 
     console_clear();
+    visible_start = visible_end = rendered;
+    controls_row = 3;
     if (depth) {
-        limit = screen_width - 4;
-        sprintf(heading, "%.*s%s", limit, history[depth - 1],
-                strlen(history[depth - 1]) > (size_t)limit ? "..." : "");
-        show(heading);
+        show(title);
+        limit = screen_width - (int)strlen(title) - 2;
+        if (limit > 3) {
+            if (strlen(history[depth - 1]) > (size_t)limit)
+                sprintf(heading, "%.*s...", limit - 3, history[depth - 1]);
+            else
+                strcpy(heading, history[depth - 1]);
+            show("  ");
+            show(heading);
+        }
         show("\n\n");
-        start = at_line(scroll);
-        end = at_line(scroll + screen_lines);
-        console_write(start, end - start);
-        show(*end ? "[More below]\n" : "\n");
+        visible_start = at_line(scroll);
+        visible_end = at_line(scroll + screen_lines);
+        console_write(visible_start, visible_end - visible_start);
+        for (p = visible_start; p < visible_end; ++p)
+            if (*p == '\n')
+                ++controls_row;
+        show(*visible_end ? "[More below]\n" : "\n");
     } else {
-        show("qlbrowse\nEnter an HTTP or HTTPS URL.\n\n");
+        show("qlbrowse " QLBROWSE_VERSION "\nEnter an HTTP or HTTPS URL.\n\n");
     }
     if (message) {
-        show(message);
+        limit = strlen(message);
+        console_write(message, limit > screen_width ? screen_width : limit);
         show("\n");
+        ++controls_row;
     }
     show("O Open  B Back  N Next  P Prev  Q Quit\n");
     show("URL or link number> ");
+}
+
+static int click_at(int col, int row, char *command)
+{
+    const char *line = visible_start, *end;
+    int offset, i;
+
+    if (row == controls_row) {
+        if (col >= 8 && col < 14)
+            strcpy(command, "b");
+        else if (col >= 16 && col < 22)
+            strcpy(command, "n");
+        else if (col >= 24 && col < 30)
+            strcpy(command, "p");
+        else
+            return 0;
+        return 1;
+    }
+    if (row < 2)
+        return 0;
+    for (i = 2; i < row && line < visible_end; ++i)
+        line = strchr(line, '\n') + 1;
+    if (line >= visible_end)
+        return 0;
+    end = strchr(line, '\n');
+    if (col < 0 || col >= end - line)
+        return 0;
+    offset = line - rendered + col;
+    for (i = 0; i < link_count; ++i) {
+        if (offset >= link_start[i] && offset < link_end[i]) {
+            sprintf(command, "%d", i + 1);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static const char *navigate(const char *address, int back)
@@ -336,15 +401,17 @@ int main(void)
     for (;;) {
         display(message);
         message = NULL;
-        if (!console_line(input, sizeof(input)) || name_is(input, strlen(input), "q"))
+        if (!console_line(input, sizeof(input), click_at) || name_is(input, strlen(input), "q"))
             break;
         if (!*input)
             continue;
         if (name_is(input, strlen(input), "o")) {
             show("HTTP URL> ");
-            if (!console_line(input, sizeof(input)) || !*input)
+            if (!console_line(input, sizeof(input), NULL) || !*input)
                 continue;
             message = navigate(input, 0);
+        } else if (name_is(input, strlen(input), "m")) {
+            message = console_pointer_status();
         } else if (name_is(input, strlen(input), "b")) {
             if (depth < 2)
                 message = "No earlier page.";
