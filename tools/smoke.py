@@ -16,6 +16,9 @@ from https_helper import Handler as HelperHandler, PORT
 ROOT = Path(__file__).resolve().parents[1]
 
 requests = []
+LONG_QUERY = "?q=" + "x" * 620
+LONG_LINK = "/long" + LONG_QUERY
+LONG_TARGET = "/long-target" + LONG_QUERY
 
 
 class Handler(FixtureHandler):
@@ -25,6 +28,15 @@ class Handler(FixtureHandler):
         requests.append((self.path, self.request_version, self.headers.get("Host")))
         if self.path == "/wide":
             self.fixture_response("text/plain", b"Large page accepted\n" + b"x" * 65536)
+        elif self.path == "/long-menu":
+            self.fixture_response("text/html", f'<a href="{LONG_LINK}">Long link</a>'.encode())
+        elif self.path == LONG_LINK:
+            self.send_response(302)
+            self.send_header("Location", LONG_TARGET)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif self.path == LONG_TARGET:
+            self.fixture_response("text/plain", b"Long destination loaded")
         elif self.path == "/feed.xml":
             self.fixture_response("text/xml", b"""<rss version="2.0"><channel>
 <title>Test news feed</title>""" + b"<item><title>Earlier headline</title></item>" * 18
@@ -106,7 +118,8 @@ def main():
                    f"http://{origin}/bad-chunk\nhttp://{origin}/loop\n1\nb\n"
                    f"http://{origin}/secure\n1\nb\n"
                    f"https://127.0.0.1:{upstream.server_port}/start\n"
-                   f"http://{origin}/wide\nhttps://{secure_origin}/feed.xml\nn\n1\nb\n1\nb\nb\nq\n"),
+                   f"http://{origin}/wide\nhttps://{secure_origin}/feed.xml\nn\n1\nb\n1\nb\nb\n"
+                   f"http://{origin}/long-menu\n1\nq\n"),
             capture_output=True, text=True, timeout=15, check=True,
         )
 
@@ -128,6 +141,7 @@ def main():
     assert "Readable article text." in result.stdout, result.stdout
     assert "x" * 72 + " wrap\nintact" in result.stdout, result.stdout
     assert result.stdout.count("Test news feed") == 1, result.stdout
+    assert "Long destination loaded" in result.stdout, result.stdout
     assert requests == [
         (path, "HTTP/1.1", origin)
         for path in ("/start", "/pages/index.html", "/pages/second.html",
@@ -140,7 +154,10 @@ def main():
     ] + [("/wide", "HTTP/1.1", origin)] + [
         (path, "HTTP/1.1", secure_origin)
         for path in ("/feed.xml", "/article?one=1&two=2", "/article?one=1&two=2")
-    ] + [("/wide", "HTTP/1.1", origin)], requests
+    ] + [
+        (path, "HTTP/1.1", origin)
+        for path in ("/wide", "/long-menu", LONG_LINK, LONG_TARGET)
+    ], requests
     print("PASS: QDOS executable metadata, HTTP redirects, chunks, HTTPS verification, larger pages, RSS, article extraction and cached Back")
 
 

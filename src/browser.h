@@ -1,12 +1,12 @@
 #ifndef BROWSER_H
 #define BROWSER_H
 
-#define URL_SIZE 512
+#define URL_SIZE 1024
 #define HOST_SIZE 129
 #define BODY_LIMIT 262144
 #define HTTPS_HELPER_PORT 8787
 #define WIDTH 79
-#define MAX_WIDTH (URL_SIZE - 1)
+#define MAX_WIDTH 511
 #define PAGE_LINES 19
 
 struct url {

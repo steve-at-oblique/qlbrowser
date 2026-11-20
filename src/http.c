@@ -229,7 +229,7 @@ static const char *read_chunked(long channel, char *body, char *line, int size)
 
 static const char *response(long channel, char *body, int *html, char *location, int secure)
 {
-    char line[1024], *value, *end;
+    char line[URL_SIZE + 16], *value, *end;
     long length = -1, parsed;
     int n, c, used = 0, status, headers = 0, redirect, chunked = 0;
 

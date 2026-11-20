@@ -29,7 +29,7 @@ static const struct {
 static char history[HISTORY][URL_SIZE];
 static int history_scroll[HISTORY];
 static char word[MAX_WIDTH];
-static int word_length;
+static int word_length, pending_marker, marker_only;
 static int cursor, column, scroll, depth, pending_space, block_gap, list_bullet;
 
 static void show(const char *text)
@@ -69,13 +69,36 @@ static void emit(int c)
     ++column;
 }
 
+/* Keep the marker with its first word when both fit on a fresh line. */
+static void emit_marker(int first_word)
+{
+    char marker[8];
+    int length, i, link = pending_marker - 1;
+
+    if (!pending_marker)
+        return;
+    length = sprintf(marker, "[%d]", pending_marker);
+    if (column && column + 1 + length + (first_word ? 1 + first_word : 0) > screen_width)
+        line_break();
+    else if (column)
+        emit(' ');
+    start_content();
+    page->link_start[link] = cursor;
+    for (i = 0; i < length; ++i)
+        emit(marker[i]);
+    page->marker_end[link] = marker_only ? cursor : 0;
+    pending_marker = 0;
+    pending_space = 1;
+}
+
 static void flush_word(void)
 {
-    int i;
+    int i, starts_link = pending_marker;
 
     if (!word_length)
         return;
-    if (column && column + pending_space + word_length > screen_width)
+    emit_marker(word_length);
+    if (!starts_link && column && column + pending_space + word_length > screen_width)
         line_break();
     if (column && pending_space)
         emit(' ');
@@ -88,6 +111,7 @@ static void flush_word(void)
 static void newline(void)
 {
     flush_word();
+    emit_marker(0);
     line_break();
 }
 
@@ -113,10 +137,17 @@ static int name_is(const char *p, int n, const char *name)
     return 1;
 }
 
-static int entity(const char **p)
+static long entity(const char **p)
 {
-    static const char *names[] = {"amp", "lt", "gt", "quot", "apos", "nbsp"};
-    static const char values[] = "&<>\"' ";
+    static const struct {
+        const char *name;
+        long value;
+    } entities[] = {
+        {"amp", '&'}, {"lt", '<'}, {"gt", '>'}, {"quot", '"'}, {"apos", 39},
+        {"nbsp", ' '}, {"lsquo", 0x2018}, {"rsquo", 0x2019},
+        {"ldquo", 0x201c}, {"rdquo", 0x201d}, {"ndash", 0x2013},
+        {"mdash", 0x2014}, {"hellip", 0x2026}, {"copy", 0xa9}
+    };
     const char *start = *p, *end = start + 1;
     char *number_end;
     long value;
@@ -126,10 +157,10 @@ static int entity(const char **p)
         ++end;
     if (*end != ';' || end == start + 1)
         return '&';
-    for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
-        if (name_is(start + 1, end - start - 1, names[i])) {
+    for (i = 0; i < sizeof(entities) / sizeof(entities[0]); ++i) {
+        if (name_is(start + 1, end - start - 1, entities[i].name)) {
             *p = end;
-            return values[i];
+            return entities[i].value;
         }
     }
     if (start[1] == '#') {
@@ -139,17 +170,88 @@ static int entity(const char **p)
             value = strtol(start + 2, &number_end, 10);
         if (number_end == end) {
             *p = end;
-            return value == 160 ? ' ' : value >= 32 && value < 127 ? (int)value : '?';
+            return value;
         }
     }
     return '&';
 }
 
+/* Leave the cursor on the last byte, like entity(). */
+static long text_codepoint(const char **p)
+{
+    const unsigned char *start = (const unsigned char *)*p;
+    unsigned first = *start;
+    int i, size;
+    long value, minimum;
+
+    if (first >= 0xc2 && first <= 0xdf) {
+        size = 2;
+        value = first & 0x1f;
+        minimum = 0x80;
+    } else if (first >= 0xe0 && first <= 0xef) {
+        size = 3;
+        value = first & 0x0f;
+        minimum = 0x800;
+    } else if (first >= 0xf0 && first <= 0xf4) {
+        size = 4;
+        value = first & 0x07;
+        minimum = 0x10000;
+    } else {
+        /* Legacy single-byte forms fit in one output cell. */
+        if (first == 0xa9)
+            return 'C';
+        if (first == 0x85)
+            return '.';
+        return first;
+    }
+    for (i = 1; i < size; ++i) {
+        if ((start[i] & 0xc0) != 0x80)
+            return first;
+        value = (value << 6) | (start[i] & 0x3f);
+    }
+    if (value < minimum || value > 0x10ffff ||
+        (value >= 0xd800 && value <= 0xdfff))
+        return first;
+    *p += size - 1;
+    return value;
+}
+
+static void html_text_byte(long value)
+{
+    switch (value) {
+    case 0x91: case 0x92: case 0x2018: case 0x2019:
+        text_byte(39);
+        break;
+    case 0x93: case 0x94: case 0x201c: case 0x201d:
+        text_byte('"');
+        break;
+    case 0x96: case 0x97: case 0x2013: case 0x2014:
+        text_byte('-');
+        break;
+    case 0x2026:
+        text_byte('.');
+        text_byte('.');
+        text_byte('.');
+        break;
+    case 0xa0:
+        text_byte(' ');
+        break;
+    case 0xa9:
+        text_byte('(');
+        text_byte('c');
+        text_byte(')');
+        break;
+    default:
+        text_byte(value >= 0 && value < 128 ? (int)value : '?');
+    }
+}
+
 static int add_link(const struct url *base, const char *p, const char *end, int in_list)
 {
     const char *name, *start, *stop;
-    char href[URL_SIZE], marker[8];
+    char href[URL_SIZE];
     int n, quote;
+    long value;
 
     if (page->link_count == MAX_LINKS)
         return 0;
@@ -178,24 +280,20 @@ static int add_link(const struct url *base, const char *p, const char *end, int 
             continue;
         n = 0;
         while (start < stop && n < URL_SIZE - 1) {
-            href[n++] = *start == '&' ? entity(&start) : *start;
+            value = *start == '&' ? entity(&start) : (unsigned char)*start;
+            if (value == 0xa0)
+                value = ' ';
+            if (value < 32 || value >= 127)
+                return 0;
+            href[n++] = (char)value;
             ++start;
         }
         href[n] = 0;
         if (start == stop && resolve_url(base, href, page->links[page->link_count])) {
             flush_word();
             list_bullet = 0;
-            if (column && column + 5 > screen_width)
-                newline();
-            else if (column)
-                emit(' ');
-            start_content();
-            page->link_start[page->link_count] = cursor;
-            sprintf(marker, "[%d]", ++page->link_count);
-            for (n = 0; marker[n]; ++n)
-                emit(marker[n]);
-            page->marker_end[page->link_count - 1] = in_list ? cursor : 0;
-            pending_space = 1;
+            pending_marker = ++page->link_count;
+            marker_only = in_list;
             return page->link_count;
         }
         return 0;
@@ -206,7 +304,8 @@ static int add_link(const struct url *base, const char *p, const char *end, int 
 static void render_html(const struct url *base)
 {
     const char *p = body, *name, *attrs, *end, *hidden = NULL;
-    int closing, n, quote, c, active_link = 0, item_links = -1;
+    long c;
+    int closing, n, quote, active_link = 0, item_links = -1;
 
     while (*p) {
         if (!strncmp(p, "<!--", 4)) {
@@ -219,8 +318,8 @@ static void render_html(const struct url *base)
         if (*p != '<' || (!isalpha((unsigned char)p[1]) &&
                           p[1] != '!' && p[1] != '/')) {
             if (!hidden) {
-                c = *p == '&' ? entity(&p) : (unsigned char)*p;
-                text_byte(c);
+                c = *p == '&' ? entity(&p) : text_codepoint(&p);
+                html_text_byte(c);
             }
             ++p;
             continue;
@@ -257,6 +356,7 @@ static void render_html(const struct url *base)
         } else if (name_is(name, n, "a")) {
             if (active_link) {
                 flush_word();
+                emit_marker(0);
                 page->link_end[active_link - 1] = cursor;
                 active_link = 0;
             }
@@ -273,6 +373,7 @@ static void render_html(const struct url *base)
             item_links = closing ? -1 : page->link_count;
             list_bullet = !closing;
         } else if (name_is(name, n, "br") || name_is(name, n, "div") ||
+                   name_is(name, n, "center") ||
                    name_is(name, n, "ul") || name_is(name, n, "ol") ||
                    (n == 2 && tolower((unsigned char)*name) == 'h' &&
                     name[1] >= '1' && name[1] <= '6')) {
@@ -281,6 +382,7 @@ static void render_html(const struct url *base)
     }
     if (active_link) {
         flush_word();
+        emit_marker(0);
         page->link_end[active_link - 1] = cursor;
     }
 }
@@ -289,7 +391,8 @@ static void render(const struct url *url, int html)
 {
     const unsigned char *p;
 
-    cursor = column = pending_space = block_gap = list_bullet = word_length = page->link_count = 0;
+    cursor = column = pending_space = block_gap = list_bullet = 0;
+    word_length = pending_marker = page->link_count = 0;
     if (html) {
         render_html(url);
     } else {

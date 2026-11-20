@@ -54,5 +54,22 @@ int main(void)
     display(NULL);
     assert(click_at(5, 2, command) && !strcmp(command, "1"));
     assert(!click_at(0, 3, command));
+    screen_width = 79;
+    strcpy(body, "<a href='/headline?x=1&amp;y=2'>"
+                 "\xe2\x80\x9c" "I\xe2\x80\x99"
+                 "m not MAGA,\xe2\x80\x9d Says Man in MAGA Hat</a>"
+                 "<p>&ldquo;It&#8217;s readable&#x201d; &mdash; &copy;</p>"
+                 "<p>\x93" "Legacy\x94</p>");
+    render(&url, 1);
+    assert(strstr(page->rendered, "[1] \"I'm not MAGA,\" Says Man in MAGA Hat\n"));
+    assert(strstr(page->rendered, "\"It's readable\" - (c)\n"));
+    assert(strstr(page->rendered, "\"Legacy\"\n"));
+    assert(!strcmp(page->links[0], "http://example.org/headline?x=1&y=2"));
+    screen_width = 20;
+    strcpy(body, "<center>Top | Technology <a href='/entertainment'>"
+                 "Entertainment</a></center><center>US edition</center>");
+    render(&url, 1);
+    assert(strstr(page->rendered, "\n[1] Entertainment\nUS edition\n"));
+    assert(!strncmp(page->rendered + page->link_start[0], "[1] Entertainment", 17));
     return 0;
 }

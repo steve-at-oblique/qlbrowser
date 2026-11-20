@@ -9,7 +9,7 @@
 
 char _prog_name[] = "qlbrowse";
 char *_endmsg = NULL;
-long _stack = 8192;
+long _stack = 12288;
 static chanid_t console;
 static int cell_width, cell_height, pointer_enabled;
 static short pointer_x, pointer_y;
