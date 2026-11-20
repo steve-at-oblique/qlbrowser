@@ -24,6 +24,11 @@ int main(void)
     assert(click_at(5, 3, command) && !strcmp(command, "1"));
     assert(click_at(9, 1, command) && !strcmp(command, "n"));
 
+    assert(click_at(22, 1, command) && !strcmp(command, "r"));
+    assert(click_at(0, 2 + screen_lines, command) && !strcmp(command, "n"));
+    assert(click_at(11, 2 + screen_lines, command) && !strcmp(command, "n"));
+    assert(!click_at(12, 2 + screen_lines, command));
+
     scroll = screen_lines;
     display("HTTP message");
     assert(click_at(0, 2, command) && !strcmp(command, "1"));
@@ -31,13 +36,14 @@ int main(void)
     assert(click_at(0, 1, command) && !strcmp(command, "b"));
     assert(click_at(19, 1, command) && !strcmp(command, "p"));
     assert(!click_at(6, 1, command));
+    assert(!click_at(0, 2 + screen_lines, command));
 
     previous_page = page;
     page = &pages[1];
     history_scroll[0] = scroll;
     depth = 2;
     scroll = 0;
-    assert(!navigate(history[0], 1));
+    assert(!navigate(history[0], BACK));
     assert(depth == 1 && scroll == screen_lines && !previous_page);
     display(NULL);
     assert(click_at(0, 2, command) && !strcmp(command, "1"));
@@ -70,6 +76,14 @@ int main(void)
     render(&url, 1);
     assert(!strcmp(page->rendered, "Thursday, November 19, 2026 * 1:28 PM EST\n\n"
                                   "* * * * *\n"));
+    strcpy(body, "<p>&copy NPR &nbsp clean &amp! &lt,&gt. &quot text</p>"
+                 "<p>&copyright &bull &#169 &unknown;</p>"
+                 "<p>\xf0\x9f\x8e\xa7 \xf0\x9f\x98\x80 "
+                 "Caf\xc3\xa9 &#225; &#241; &#252; &#246; &#231;</p>");
+    render(&url, 1);
+    assert(!strcmp(page->rendered, "(c) NPR clean &! <,>. \" text\n\n"
+                                  "&copyright &bull &#169 &unknown;\n\n"
+                                  "[Audio] * Cafe a n u o c\n"));
     screen_width = 20;
     strcpy(body, "<center>Top | Technology <a href='/entertainment'>"
                  "Entertainment</a></center><center>US edition</center>");

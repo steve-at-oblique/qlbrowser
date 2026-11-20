@@ -33,6 +33,8 @@ void console_close(void);
 void console_clear(void);
 void console_underline(int enabled);
 void console_write(const char *data, int length);
+/* With a click callback, an empty command accepts browser navigation shortcuts.
+   The callback handles left clicks at zero-based character coordinates. */
 int console_line(char *buffer, int size, int (*click)(int, int, char *));
 
 #define TCP_EOF (-1)

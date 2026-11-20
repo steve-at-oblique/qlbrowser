@@ -24,8 +24,9 @@ static const struct {
     const char *label;
     char key;
 } navigation[] = {
-    {"[Back]", 'b'}, {"[Next]", 'n'}, {"[Prev]", 'p'}
+    {"[Back]", 'b'}, {"[Next]", 'n'}, {"[Prev]", 'p'}, {"[Refresh]", 'r'}
 };
+static const char more_below[] = "[More below]";
 static char history[HISTORY][URL_SIZE];
 static int history_scroll[HISTORY];
 static char word[MAX_WIDTH];
@@ -142,34 +143,42 @@ static long entity(const char **p)
     static const struct {
         const char *name;
         long value;
+        int legacy;
     } entities[] = {
-        {"amp", '&'}, {"lt", '<'}, {"gt", '>'}, {"quot", '"'}, {"apos", 39},
-        {"nbsp", ' '}, {"lsquo", 0x2018}, {"rsquo", 0x2019},
-        {"ldquo", 0x201c}, {"rdquo", 0x201d}, {"ndash", 0x2013},
-        {"mdash", 0x2014}, {"hellip", 0x2026}, {"copy", 0xa9},
-        {"bull", 0x2022}, {"bullet", 0x2022}
+        {"amp", '&', 1}, {"lt", '<', 1}, {"gt", '>', 1}, {"quot", '"', 1},
+        {"nbsp", ' ', 1}, {"copy", 0xa9, 1}, {"apos", 39, 0},
+        {"lsquo", 0x2018, 0}, {"rsquo", 0x2019, 0}, {"ldquo", 0x201c, 0},
+        {"rdquo", 0x201d, 0}, {"ndash", 0x2013, 0}, {"mdash", 0x2014, 0},
+        {"hellip", 0x2026, 0}, {"bull", 0x2022, 0}, {"bullet", 0x2022, 0}
     };
     const char *start = *p, *end = start + 1;
+    const char *digits;
     char *number_end;
     long value;
     unsigned i;
 
-    while (end - start <= 12 && (*end == '#' || isalnum((unsigned char)*end)))
+    if (*end == '#')
         ++end;
-    if (*end != ';' || end == start + 1)
+    while (end - start <= 12 && isalnum((unsigned char)*end))
+        ++end;
+    if (end == start + 1)
         return '&';
     for (i = 0; i < sizeof(entities) / sizeof(entities[0]); ++i) {
-        if (name_is(start + 1, end - start - 1, entities[i].name)) {
-            *p = end;
+        if ((*end == ';' || entities[i].legacy) &&
+            name_is(start + 1, end - start - 1, entities[i].name)) {
+            *p = *end == ';' ? end : end - 1;
             return entities[i].value;
         }
     }
-    if (start[1] == '#') {
-        if (start[2] == 'x' || start[2] == 'X')
-            value = strtol(start + 3, &number_end, 16);
-        else
-            value = strtol(start + 2, &number_end, 10);
-        if (number_end == end) {
+    if (*end == ';' && start[1] == '#') {
+        digits = start + 2;
+        if (*digits == 'x' || *digits == 'X') {
+            ++digits;
+            value = strtol(digits, &number_end, 16);
+        } else {
+            value = strtol(digits, &number_end, 10);
+        }
+        if (number_end == end && number_end != digits) {
             *p = end;
             return value;
         }
@@ -219,6 +228,11 @@ static long text_codepoint(const char **p)
 
 static void html_text_byte(long value)
 {
+    static const char latin1[] =
+        "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTs"
+        "aaaaaaaceeeeiiiidnooooo/ouuuuyty";
+    const char *audio;
+
     switch (value) {
     case 0x91: case 0x92: case 0x2018: case 0x2019:
         text_byte(39);
@@ -245,8 +259,17 @@ static void html_text_byte(long value)
         text_byte('c');
         text_byte(')');
         break;
+    case 0x1f3a7:
+        for (audio = "[Audio]"; *audio; ++audio)
+            text_byte(*audio);
+        break;
     default:
-        text_byte(value >= 0 && value < 128 ? (int)value : '?');
+        if (value >= 0xc0 && value <= 0xff)
+            text_byte(latin1[value - 0xc0]);
+        else if (value >= 0x1f300 && value <= 0x1faff)
+            text_byte('*');
+        else
+            text_byte(value >= 0 && value < 128 ? (int)value : '?');
     }
 }
 
@@ -479,7 +502,9 @@ static void display(const char *message)
         visible_start = at_line(scroll);
         visible_end = at_line(scroll + screen_lines);
         display_page();
-        show(*visible_end ? "[More below]\n" : "\n");
+        if (*visible_end)
+            show(more_below);
+        show("\n");
     } else {
         show("Enter an HTTP or HTTPS URL.\n\n");
     }
@@ -511,6 +536,11 @@ static int click_at(int col, int row, char *command)
         }
         return 0;
     }
+    if (row == 2 + screen_lines && *visible_end &&
+        col >= 0 && col < (int)sizeof(more_below) - 1) {
+        strcpy(command, "n");
+        return 1;
+    }
     if (row < 2)
         return 0;
     for (i = 2; i < row && line < visible_end; ++i)
@@ -530,14 +560,16 @@ static int click_at(int col, int row, char *command)
     return 0;
 }
 
-static const char *navigate(const char *address, int back)
+enum navigation_mode { FOLLOW, BACK, REFRESH };
+
+static const char *navigate(const char *address, enum navigation_mode mode)
 {
     struct url url;
     char requested[URL_SIZE];
     const char *error;
     int html;
 
-    if (back && previous_page) {
+    if (mode == BACK && previous_page) {
         page = previous_page;
         previous_page = NULL;
         --depth;
@@ -549,15 +581,17 @@ static const char *navigate(const char *address, int back)
     strcpy(requested, address);
     if ((error = fetch(&url, requested, body, &html)) != NULL)
         return error;
-    if (!back && depth) {
+    if (mode == FOLLOW && depth) {
         previous_page = page;
         page = page == &pages[0] ? &pages[1] : &pages[0];
     }
     render(&url, html);
-    if (back) {
-        --depth;
+    if (mode != FOLLOW) {
+        if (mode == BACK) {
+            --depth;
+            scroll = history_scroll[depth - 1];
+        }
         strcpy(history[depth - 1], requested);
-        scroll = history_scroll[depth - 1];
         while (scroll && !*at_line(scroll))
             scroll -= screen_lines;
     } else {
@@ -596,14 +630,16 @@ int main(void)
             show("HTTP URL> ");
             if (!console_line(input, sizeof(input), NULL) || !*input)
                 continue;
-            message = navigate(input, 0);
+            message = navigate(input, FOLLOW);
         } else if (name_is(input, strlen(input), "m")) {
             message = console_pointer_status();
         } else if (name_is(input, strlen(input), "b")) {
             if (depth < 2)
                 message = "No earlier page.";
             else
-                message = navigate(history[depth - 2], 1);
+                message = navigate(history[depth - 2], BACK);
+        } else if (name_is(input, strlen(input), "r")) {
+            message = depth ? navigate(history[depth - 1], REFRESH) : "No page to refresh.";
         } else if (name_is(input, strlen(input), "n")) {
             if (*at_line(scroll + screen_lines))
                 scroll += screen_lines;
@@ -614,9 +650,9 @@ int main(void)
             choice = strtol(input, &end, 10);
             if (end != input && !*end)
                 message = choice > 0 && choice <= page->link_count
-                          ? navigate(page->links[choice - 1], 0) : "Unknown link number.";
+                          ? navigate(page->links[choice - 1], FOLLOW) : "Unknown link number.";
             else
-                message = navigate(input, 0);
+                message = navigate(input, FOLLOW);
         }
     }
     console_close();

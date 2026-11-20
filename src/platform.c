@@ -158,7 +158,7 @@ void console_write(const char *data, int length)
 
 int console_line(char *buffer, int size, int (*click)(int, int, char *))
 {
-    char key;
+    char key, page_command;
     unsigned char code;
     int length = 0, status, overflow = 0, matched;
     struct pointer_record pointer;
@@ -180,7 +180,14 @@ int console_line(char *buffer, int size, int (*click)(int, int, char *))
             if (pointer.key == 1 || pointer.key == 2) {
                 matched = click && !length && pointer.channel == console &&
                           pointer.x >= 0 && pointer.y >= 0 &&
-                          click(pointer.x / cell_width, pointer.y / cell_height, buffer);
+                          pointer.x < pointer_definition.main_area.q_width &&
+                          pointer.y < pointer_definition.main_area.q_height;
+                if (matched) {
+                    if (pointer.key == 2)
+                        strcpy(buffer, "b");
+                    else
+                        matched = click(pointer.x / cell_width, pointer.y / cell_height, buffer);
+                }
                 sprintf(pointer_status, "Mouse %d at %d,%d px: %s.", (int)pointer.key,
                         (int)pointer.x, (int)pointer.y, matched ? "activated" : "no target");
                 if (matched) {
@@ -198,6 +205,25 @@ int console_line(char *buffer, int size, int (*click)(int, int, char *))
         if (key == 27 || key == '\n' || key == '\r')
             break;
         code = (unsigned char)key;
+        if (click && !length) {
+            /* The SMSQ/E Q68 mouse driver queues Alt+Up/Down for the wheel. */
+            switch (code) {
+            case 0xd0: case 0xd1: case 0xf8:
+                page_command = 'p';
+                break;
+            case 0xd8: case 0xd9: case 0xfc: case ' ':
+                page_command = 'n';
+                break;
+            default:
+                page_command = 0;
+            }
+            if (page_command) {
+                buffer[0] = page_command;
+                buffer[1] = 0;
+                sd_curs(console, -1);
+                return 1;
+            }
+        }
         if (code == 8 || code == 127 || code == 194) {
             if (overflow) {
                 --overflow;

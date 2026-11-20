@@ -126,7 +126,7 @@ def main():
         url = f"http://{origin}/start"
         result = subprocess.run(
             [ROOT / "build/host/qlbrowse"],
-            input=(f"{url}\n1\nb\nhttp://{origin}/missing.html\n"
+            input=(f"r\n{url}\n1\nr\nb\nb\nhttp://{origin}/missing.html\n"
                    f"http://{origin}/bad-chunk\nhttp://{origin}/loop\n1\nb\n"
                    f"http://{origin}/secure\n1\nb\n"
                    f"https://127.0.0.1:{upstream.server_port}/start\n"
@@ -146,11 +146,14 @@ def main():
                 connection.close()
 
     version = (ROOT / "VERSION").read_text().strip()
-    assert f"qlbrowse {version}  http://{origin}/pages/second.html\n[Back] [Next] [Prev]" in result.stdout
+    assert f"qlbrowse {version}  http://{origin}/pages/second.html\n[Back] [Next] [Prev] [Refresh]" in result.stdout
     first = "QL browser test - page one"
     second = "QL browser test - page two"
     assert "[1] Open page two" in result.stdout, result.stdout
     assert "[1] Open page one" in result.stdout, result.stdout
+    assert "No page to refresh." in result.stdout
+    assert "No earlier page." in result.stdout
+    assert result.stdout.count(second) >= 2
     assert result.stdout.index(first) < result.stdout.index(second) < result.stdout.rindex(first)
     assert f"http://{origin}/pages/second.html" in result.stdout, result.stdout
     assert "HTTP status 404" in result.stdout, result.stdout
@@ -168,7 +171,7 @@ def main():
     assert requests == [
         (path, "HTTP/1.1", origin)
         for path in ("/start", "/pages/index.html", "/pages/second.html",
-                     "/missing.html", "/bad-chunk",
+                     "/pages/second.html", "/missing.html", "/bad-chunk",
                      *(["/loop"] * 6), "/pages/second.html",
                      "/secure")
     ] + [
@@ -184,7 +187,7 @@ def main():
         (path, "HTTP/1.1", secure_origin)
         for path in ("/compressed-menu", "/wide", "/oversized", "/bad-deflate")
     ], requests
-    print("PASS: QDOS executable metadata, HTTP redirects, chunks, HTTPS verification, larger pages, RSS, article extraction and cached Back")
+    print("PASS: QDOS executable metadata, HTTP redirects, chunks, HTTPS verification, larger pages, RSS, article extraction, Refresh and cached Back")
 
 
 if __name__ == "__main__":

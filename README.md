@@ -169,36 +169,47 @@ The user verified word wrapping and full display coverage in Large Mode 4
 on the QIMSI Gold. The primary console showed the full NPR Text-Only
 homepage at once.
 
-Type a URL or press `O` and Return for a dedicated URL prompt. Enter a
-number shown next to a link to follow it. With the SMSQ/E Pointer
-Environment, click the link number or any visible line of its text.
-The Back, Next, and Prev buttons directly below the URL accept clicks. Press
-`M` and Return to see the last mouse event or the pointer setup status.
-The user verified mouse navigation on the QIMSI Gold with qlbrowse 0.5.0.
-The version and current URL share one header line, also verified on hardware.
-The user verified the top navigation buttons on the QIMSI Gold with
-qlbrowse 0.5.1.
+### Navigation
 
-`B` restores the previous page from memory, including its scroll position
-and links. A second consecutive Back refetches the older page. The user
-verified fast Back navigation on the QIMSI Gold with qlbrowse 0.6.0.
+| Action | Keyboard | Mouse |
+| --- | --- | --- |
+| Open a URL | Type the URL and press Return, or press `O` and Return for a dedicated URL prompt. | |
+| Follow a link | Type its number and press Return. | Left-click its number or any visible line of its text. |
+| Go back | `B` and Return | Left-click `[Back]` or right-click inside the browser window. |
+| Move down one screen | `N` and Return, Down Arrow, or Space | Left-click `[Next]` or `[More below]`, or scroll down. |
+| Move up one screen | `P` and Return or Up Arrow | Left-click `[Prev]` or scroll up. |
+| Refresh the current page | `R` and Return | Left-click `[Refresh]`. |
+| Quit | `Q` and Return | |
 
-`N` and `P` move down and up by one screen. `Q` quits. Use Backspace or
-the QL's Ctrl+Left key
-to erase input. Escape clears the current prompt.
+Use mouse controls and the immediate arrow and Space shortcuts at an empty
+command prompt. Mouse controls use the Pointer Environment. Wheel paging was
+verified on QIMSI Gold. Alt+Up and Alt+Down also page at an empty prompt.
+
+Back restores the previous page from memory, including its scroll position
+and links. A second consecutive Back refetches the older page. Refresh
+reloads the current URL without adding a history entry and keeps the current
+screen position if that screen still exists after reloading.
+
+Press `M` and Return to see the last mouse button event or pointer setup
+status. Use Backspace or the QL's Ctrl+Left key to erase input. Escape
+clears the current prompt.
 
 The browser uses HTTP/1.1 GET and displays simple HTML or plain text
-from 200 responses, up to 256 KiB each. It displays ASCII text and supports
-relative and absolute HTTP links, follows up to five HTTP or HTTPS redirects,
-and decodes chunked responses. The HTTPS helper handles gzip and deflate
+from 200 responses, up to 256 KiB each. In HTML, common legacy entities such
+as `&copy` also work without a semicolon. Latin-1 accents fold to ASCII,
+headphones render as `[Audio]`, and other emoji in the U+1F300–U+1FAFF
+range render as `*`. The browser supports relative and absolute HTTP links,
+follows up to five HTTP or HTTPS redirects, and decodes chunked responses. The HTTPS helper handles gzip and deflate
 with bounded decoding. In-page fragment navigation is outside the current
 scope.
 
 Run `make test` for a loopback smoke test using the same browser core with
 host sockets. It checks the executable header, the two-page navigation
-sequence through a redirect and chunked response, Back restoring the final URL without another request, recovery from HTTP errors, HTTPS certificate hostname rejection,
-larger pages, RSS navigation, and article extraction. The test needs OpenSSL to generate a temporary certificate. The
-QIMSI tests check the QDOS console, QDOS I/O traps and USB driver path.
+sequence through a redirect and chunked response, Refresh preserving history,
+cached Back, recovery from HTTP errors, HTTPS certificate hostname rejection,
+larger pages, RSS navigation, and article extraction. The test needs OpenSSL
+to generate a temporary certificate. The QIMSI tests check the QDOS console,
+QDOS I/O traps and USB driver path.
 
 ## License
 
