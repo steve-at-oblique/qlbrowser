@@ -43,7 +43,8 @@ long tcp_open(const char *host, unsigned port)
     char device[HOST_SIZE + 11];
 
     sprintf(device, "TCP_%s:%u", host, port);
-    return io_open(device, 0);
+    /* SMSQmulator leaves mode 0 TCP sockets unconnected. Mode 1 connects. */
+    return io_open(device, 1);
 }
 
 int tcp_send(long channel, char *data, int length)

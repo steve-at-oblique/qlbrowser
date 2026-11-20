@@ -1,3 +1,4 @@
 /build/
 __pycache__/
 /[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]
+.DS_Store

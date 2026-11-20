@@ -14,3 +14,9 @@ to generate a temporary certificate.
 - Window sizing passed in all six documented display modes.
 - Mouse wheel paging passed after adding support for the SMSQ/E Alt+Up
   and Alt+Down wheel codes.
+- HTTPS browsing passed with SNLTCP using `TCP_` open mode 1.
+
+## SMSQmulator results
+
+- HTTPS browsing passed on SMSQmulator 3.03 with its built-in `TCP_` device
+  after changing the open mode to 1.

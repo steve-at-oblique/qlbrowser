@@ -33,7 +33,8 @@ EX win1_qlbrowser
 HTTPS browsing requires the Python 3 helper in `tools/https_helper.py`.
 Run it on the Linux host on your network whose loopback interface your
 `TCP_` driver reaches at `127.0.0.1`. The browser connects to the helper
-at `127.0.0.1:8787` through that driver.
+at `127.0.0.1:8787` through that driver. With SMSQmulator's built-in
+`TCP_` device, run the helper on the same machine as SMSQmulator.
 
 From the repository root on that host, run:
 
