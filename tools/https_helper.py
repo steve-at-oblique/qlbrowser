@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 """Fetch HTTPS pages for qlbrowse using the Linux host's TLS trust store."""
 import argparse
+import gzip
 import http.client
 from html import escape
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import re
 import ssl
 import unicodedata
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 import xml.etree.ElementTree as ET
+import zlib
 
 PORT = 8787
 BODY_LIMIT = 256 * 1024
-SOURCE_LIMIT = 4 * 1024 * 1024
+SOURCE_LIMIT = 8 * 1024 * 1024
 XML_TYPES = {"application/rss+xml", "application/xml", "text/xml"}
 PUNCTUATION = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"',
-                            "–": "-", "—": "-", "…": "...", "\xa0": " "})
+                            "–": "-", "—": "-", "…": "...", "•": "*", "\xa0": " "})
 REDIRECTS = {301, 302, 303, 307, 308}
 AUTHORITY = re.compile(r"[A-Za-z0-9.-]{1,128}(?::[0-9]{1,5})?")
 
@@ -113,6 +116,99 @@ def article_page(body, content_type):
     return "\n".join(f"<{tag}>{text}</{tag}>" for tag, text in parser.parts).encode("ascii")
 
 
+class LinkListCleaner(HTMLParser):
+    blocks = {"h1", "h2", "h3", "p", "li", "blockquote", "tr"}
+    omitted = {"script", "style", "svg", "noscript", "nav", "aside", "footer"}
+
+    def __init__(self, base_url):
+        super().__init__()
+        self.base_url = base_url
+        self.hidden = []
+        self.block = None
+        self.href = None
+        self.in_link = False
+        self.tokens = []
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if self.hidden:
+            if tag in self.omitted:
+                self.hidden.append(tag)
+        elif tag in self.omitted:
+            self.hidden.append(tag)
+        elif tag in self.blocks:
+            self.finish_block()
+            self.block = tag
+        elif tag == "a":
+            self.finish_link()
+            self.href = None
+            href = (dict(attrs).get("href") or "").strip()
+            if href and not href.startswith("#"):
+                try:
+                    link = urljoin(self.base_url, href)
+                    if urlsplit(link).scheme in ("http", "https"):
+                        self.href = quote(link, safe=":/?#[]@!$&'()*+,;=%")
+                except ValueError:
+                    pass
+
+    def handle_endtag(self, tag):
+        if self.hidden:
+            if tag == self.hidden[-1]:
+                self.hidden.pop()
+        elif tag == "a":
+            self.finish_link()
+            self.href = None
+        elif tag == self.block:
+            self.finish_block()
+
+    def handle_data(self, data):
+        if self.hidden:
+            return
+        cleaned = html_text(data)
+        if not cleaned:
+            return
+        if not self.block:
+            self.block = "p"
+        if self.tokens:
+            self.tokens.append(" ")
+        if self.href and not self.in_link:
+            self.tokens.append(f'<a href="{escape(self.href, quote=True)}">')
+            self.in_link = True
+        self.tokens.append(cleaned)
+
+    def close(self):
+        super().close()
+        self.finish_block()
+
+    def finish_link(self):
+        if self.in_link:
+            self.tokens.append("</a>")
+            self.in_link = False
+
+    def finish_block(self):
+        self.finish_link()
+        if self.block:
+            line = "".join(self.tokens).strip()
+            if line:
+                self.parts.append(f"<{self.block}>{line}</{self.block}>")
+        self.tokens.clear()
+        self.block = None
+
+
+def decode_content(body, encoding, limit):
+    """Decode at most limit + 1 bytes so the caller can detect overflow."""
+    if encoding == "gzip":
+        with gzip.GzipFile(fileobj=io.BytesIO(body)) as stream:
+            return stream.read(limit + 1)
+    if encoding == "deflate":
+        stream = zlib.decompressobj()
+        decoded = stream.decompress(body, limit + 1)
+        if len(decoded) <= limit and (not stream.eof or stream.unused_data):
+            raise ValueError("invalid upstream deflate stream")
+        return decoded
+    return body
+
+
 class Handler(BaseHTTPRequestHandler):
     def setup(self):
         self.request.settimeout(10)
@@ -161,24 +257,44 @@ class Handler(BaseHTTPRequestHandler):
                     transfer = response.getheader("Transfer-Encoding")
                     if transfer and not response.chunked:
                         raise ValueError("unsupported upstream transfer encoding")
-                    transformable = (encoding.lower() == "identity" and
+                    enc = encoding.strip().lower()
+                    supported_encoding = enc in ("identity", "gzip", "deflate")
+                    transformable = (supported_encoding and
                                      (media_type == "text/html" or media_type in XML_TYPES))
                     limit = SOURCE_LIMIT if transformable else BODY_LIMIT
                     body = response.read(limit + 1)
                     if len(body) <= limit:
                         if response.length:
                             raise ValueError("incomplete upstream response")
+                        if supported_encoding:
+                            body = decode_content(body, enc, limit)
+                            fields["Content-Encoding"] = "identity"
+                    if len(body) <= limit:
                         converted = None
                         if transformable and media_type in XML_TYPES:
                             converted = rss_page(body, self.path)
                         elif transformable and len(body) > BODY_LIMIT:
                             converted = article_page(body, content_type)
+                            if converted is None:
+                                cleaner = LinkListCleaner(self.path)
+                                cleaner.feed(body.decode("utf-8", "replace"))
+                                cleaner.close()
+                                out, total = [], 0
+                                for line in cleaner.parts:
+                                    b = (line + "\n").encode("ascii")
+                                    if total + len(b) > 240 * 1024:
+                                        out.append(b"<p>[Truncated at 240 KB]</p>\n")
+                                        break
+                                    out.append(b)
+                                    total += len(b)
+                                converted = b"".join(out) if out else None
                         if converted is not None:
                             fields["Content-Type"] = "text/html"
                             body = converted
                     if len(body) > BODY_LIMIT:
                         status, fields, body = 413, {}, b""
-        except (OSError, ValueError, ET.ParseError, http.client.HTTPException) as exc:
+        except (OSError, EOFError, ValueError, zlib.error, ET.ParseError,
+                http.client.HTTPException) as exc:
             self.log_error("HTTPS fetch failed for %s: %s", url.hostname, exc)
             self.reply(502)
             return

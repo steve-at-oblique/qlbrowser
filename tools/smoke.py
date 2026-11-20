@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise URL entry, rendering, relative links, Back and executable metadata."""
 import functools
+import gzip
+import http.client
 import http.server
 from pathlib import Path
 import ssl
@@ -8,10 +10,11 @@ import struct
 import subprocess
 import tempfile
 import threading
+import zlib
 from contextlib import ExitStack, contextmanager
 
 from http_fixture import Handler as FixtureHandler
-from https_helper import Handler as HelperHandler, PORT
+from https_helper import Handler as HelperHandler, PORT, SOURCE_LIMIT
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,6 +40,14 @@ class Handler(FixtureHandler):
             self.end_headers()
         elif self.path == LONG_TARGET:
             self.fixture_response("text/plain", b"Long destination loaded")
+        elif self.path == "/compressed-menu":
+            body = (b"<script>" + b"x" * (300 * 1024) + b"</script>"
+                    b'<a href="/wide"><h2>Linked headline</h2></a>')
+            self.fixture_response("text/html", gzip.compress(body), "gzip")
+        elif self.path == "/oversized":
+            self.fixture_response("text/html", gzip.compress(b"x" * (SOURCE_LIMIT + 1)), "gzip")
+        elif self.path == "/bad-deflate":
+            self.fixture_response("text/html", zlib.compress(b"<p>Incomplete</p>")[:-2], "deflate")
         elif self.path == "/feed.xml":
             self.fixture_response("text/xml", b"""<rss version="2.0"><channel>
 <title>Test news feed</title>""" + b"<item><title>Earlier headline</title></item>" * 18
@@ -53,9 +64,10 @@ class Handler(FixtureHandler):
         else:
             super().do_GET()
 
-    def fixture_response(self, media_type, body):
+    def fixture_response(self, media_type, body, encoding="identity"):
         self.send_response(200)
         self.send_header("Content-Type", media_type)
+        self.send_header("Content-Encoding", encoding)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -119,9 +131,19 @@ def main():
                    f"http://{origin}/secure\n1\nb\n"
                    f"https://127.0.0.1:{upstream.server_port}/start\n"
                    f"http://{origin}/wide\nhttps://{secure_origin}/feed.xml\nn\n1\nb\n1\nb\nb\n"
-                   f"http://{origin}/long-menu\n1\nq\n"),
+                   f"http://{origin}/long-menu\n1\nhttps://{secure_origin}/compressed-menu\n1\nq\n"),
             capture_output=True, text=True, timeout=15, check=True,
         )
+
+        for path, status in (("/oversized", 413), ("/bad-deflate", 502)):
+            connection = http.client.HTTPConnection("127.0.0.1", PORT, timeout=10)
+            try:
+                connection.request("GET", f"https://{secure_origin}{path}")
+                response = connection.getresponse()
+                assert response.status == status, (path, response.status)
+                response.read()
+            finally:
+                connection.close()
 
     version = (ROOT / "VERSION").read_text().strip()
     assert f"qlbrowse {version}  http://{origin}/pages/second.html\n[Back] [Next] [Prev]" in result.stdout
@@ -136,11 +158,12 @@ def main():
     assert "Too many HTTP redirects." in result.stdout, result.stdout
     assert f"https://{secure_origin}/pages/second.html" in result.stdout, result.stdout
     assert "HTTPS helper could not load the remote page." in result.stdout, result.stdout
-    assert result.stdout.count("Large page accepted") == 2, result.stdout
+    assert result.stdout.count("Large page accepted") == 3, result.stdout
     assert result.stdout.count("[1] Fixture headline\nFixture summary.") == 3, result.stdout
     assert "Readable article text." in result.stdout, result.stdout
     assert "x" * 72 + " wrap\nintact" in result.stdout, result.stdout
     assert result.stdout.count("Test news feed") == 1, result.stdout
+    assert "[1] Linked headline" in result.stdout, result.stdout
     assert "Long destination loaded" in result.stdout, result.stdout
     assert requests == [
         (path, "HTTP/1.1", origin)
@@ -157,6 +180,9 @@ def main():
     ] + [
         (path, "HTTP/1.1", origin)
         for path in ("/wide", "/long-menu", LONG_LINK, LONG_TARGET)
+    ] + [
+        (path, "HTTP/1.1", secure_origin)
+        for path in ("/compressed-menu", "/wide", "/oversized", "/bad-deflate")
     ], requests
     print("PASS: QDOS executable metadata, HTTP redirects, chunks, HTTPS verification, larger pages, RSS, article extraction and cached Back")
 

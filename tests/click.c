@@ -65,11 +65,17 @@ int main(void)
     assert(strstr(page->rendered, "\"It's readable\" - (c)\n"));
     assert(strstr(page->rendered, "\"Legacy\"\n"));
     assert(!strcmp(page->links[0], "http://example.org/headline?x=1&y=2"));
+    strcpy(body, "<p>Thursday, November 19, 2026 \xe2\x80\xa2 1:28 PM EST</p>"
+                 "<p>&bull; &bullet; &#8226; &#x2022; \x95</p>");
+    render(&url, 1);
+    assert(!strcmp(page->rendered, "Thursday, November 19, 2026 * 1:28 PM EST\n\n"
+                                  "* * * * *\n"));
     screen_width = 20;
     strcpy(body, "<center>Top | Technology <a href='/entertainment'>"
                  "Entertainment</a></center><center>US edition</center>");
     render(&url, 1);
     assert(strstr(page->rendered, "\n[1] Entertainment\nUS edition\n"));
     assert(!strncmp(page->rendered + page->link_start[0], "[1] Entertainment", 17));
+
     return 0;
 }

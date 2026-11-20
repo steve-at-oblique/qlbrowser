@@ -146,7 +146,8 @@ static long entity(const char **p)
         {"amp", '&'}, {"lt", '<'}, {"gt", '>'}, {"quot", '"'}, {"apos", 39},
         {"nbsp", ' '}, {"lsquo", 0x2018}, {"rsquo", 0x2019},
         {"ldquo", 0x201c}, {"rdquo", 0x201d}, {"ndash", 0x2013},
-        {"mdash", 0x2014}, {"hellip", 0x2026}, {"copy", 0xa9}
+        {"mdash", 0x2014}, {"hellip", 0x2026}, {"copy", 0xa9},
+        {"bull", 0x2022}, {"bullet", 0x2022}
     };
     const char *start = *p, *end = start + 1;
     char *number_end;
@@ -227,6 +228,9 @@ static void html_text_byte(long value)
         break;
     case 0x96: case 0x97: case 0x2013: case 0x2014:
         text_byte('-');
+        break;
+    case 0x95: case 0x2022:
+        text_byte('*');
         break;
     case 0x2026:
         text_byte('.');

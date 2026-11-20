@@ -140,10 +140,11 @@ helper using the instructions above. On the QL, enter
 HTML with numbered headlines and summaries. Choose a written story
 (video entries also appear in the BBC feed), then press `B` to return.
 
-For HTTPS HTML over 256 KiB, the helper can read up to 4 MiB and extract
+For HTTPS HTML over 256 KiB, the helper can read up to 8 MiB and extract
 headings and text from HTML articles. This keeps large scripts and page
-furniture off the serial link. Oversized pages without a usable article
-still return a size error.
+furniture off the serial link. For other large HTML pages, the helper can
+keep headings, text, and links in a simplified page. Responses that exceed
+the helper's input or decoded size limit return a size error.
 
 ## Controls and scope
 
@@ -151,6 +152,10 @@ On SMSQ/E the browser queries the available display from its primary console and
 text columns and page rows from the console's character dimensions. A
 classic QDOS display uses the standard 512 x 256 geometry. HTML prose
 wraps at word boundaries, with hard breaks for words longer than a line.
+On SMSQ/E the centered console uses half the available screen width for
+all pages. The user verified this layout on the QIMSI Gold with qlbrowse
+0.8.0 and found the shorter lines easier to follow in both headline lists
+and articles.
 Link numbers stay with their first word when they fit together on a line.
 URLs can be up to 1,023 characters long.
 Paragraphs and linked list entries have blank lines between them. A link
@@ -185,8 +190,9 @@ to erase input. Escape clears the current prompt.
 The browser uses HTTP/1.1 GET and displays simple HTML or plain text
 from 200 responses, up to 256 KiB each. It displays ASCII text and supports
 relative and absolute HTTP links, follows up to five HTTP or HTTPS redirects,
-and decodes chunked responses. Compressed responses and in-page fragment
-navigation are outside the current scope.
+and decodes chunked responses. The HTTPS helper handles gzip and deflate
+with bounded decoding. In-page fragment navigation is outside the current
+scope.
 
 Run `make test` for a loopback smoke test using the same browser core with
 host sockets. It checks the executable header, the two-page navigation

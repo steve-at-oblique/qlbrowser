@@ -84,18 +84,18 @@ int console_open(void)
         return 0;
     /* On SMSQ/E a standalone console can use the whole display. */
     if (!iop_flim(console, -1, &limits) && limits.xsize > 0 && limits.ysize > 0) {
-        window.q_width = limits.xsize;
+        window.q_width = limits.xsize / 2;
         window.q_height = limits.ysize;
-        window.q_x = limits.xorg;
+        window.q_x = limits.xorg + (limits.xsize - window.q_width) / 2;
         window.q_y = limits.yorg;
     }
-    sd_wdef(console, -1, 0, 0, &window);
+    sd_wdef(console, -1, 7, 1, &window);
     sd_setsz(console, -1, 0, 0);
     if (!sd_pos(console, -1, 1, 1) && !sd_pxenq(console, -1, &pixels) &&
         pixels.q_x && pixels.q_y) {
         cell_width = pixels.q_x;
         cell_height = pixels.q_y;
-        result = iop_outl(console, -1, 0, 0, 0, &window);
+        result = iop_outl(console, -1, 7, 0, 0, &window);
         if (result) {
             sprintf(pointer_status, "Mouse: window outline error %d.", result);
         } else {
