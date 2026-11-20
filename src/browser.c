@@ -473,7 +473,7 @@ static void display_page(void)
 
 static void display(const char *message)
 {
-    static const char title[] = "qlbrowse " QLBROWSE_VERSION;
+    static const char title[] = "qlbrowser " QLBROWSER_VERSION;
     char heading[MAX_WIDTH + 1];
     int limit;
     unsigned i;
@@ -616,7 +616,7 @@ int main(void)
     long choice;
 
     if (!console_open()) {
-        puts("qlbrowse could not open its console.");
+        puts("qlbrowser could not open its console.");
         return 1;
     }
     for (;;) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch HTTPS pages for qlbrowse using the Linux host's TLS trust store."""
+"""Fetch HTTPS pages for qlbrowser using the Linux host's TLS trust store."""
 import argparse
 import gzip
 import http.client

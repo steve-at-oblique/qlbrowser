@@ -88,8 +88,8 @@ def running(server):
 
 
 def main():
-    raw = (ROOT / "build/qdos/qlbrowse").read_bytes()
-    wrapped = (ROOT / "build/dist/qlbrowse").read_bytes()
+    raw = (ROOT / "build/qdos/qlbrowser").read_bytes()
+    wrapped = (ROOT / "build/dist/qlbrowser").read_bytes()
     assert raw[6:8] == b"\x4a\xfb"
     assert raw[-8:-4] == b"XTcc"
     assert wrapped[:18].rstrip(b"\0") == b"]!QDOS File Header"
@@ -125,7 +125,7 @@ def main():
         origin = f"127.0.0.1:{server.server_port}"
         url = f"http://{origin}/start"
         result = subprocess.run(
-            [ROOT / "build/host/qlbrowse"],
+            [ROOT / "build/host/qlbrowser"],
             input=(f"r\n{url}\n1\nr\nb\nb\nhttp://{origin}/missing.html\n"
                    f"http://{origin}/bad-chunk\nhttp://{origin}/loop\n1\nb\n"
                    f"http://{origin}/secure\n1\nb\n"
@@ -146,7 +146,7 @@ def main():
                 connection.close()
 
     version = (ROOT / "VERSION").read_text().strip()
-    assert f"qlbrowse {version}  http://{origin}/pages/second.html\n[Back] [Next] [Prev] [Refresh]" in result.stdout
+    assert f"qlbrowser {version}  http://{origin}/pages/second.html\n[Back] [Next] [Prev] [Refresh]" in result.stdout
     first = "QL browser test - page one"
     second = "QL browser test - page two"
     assert "[1] Open page two" in result.stdout, result.stdout

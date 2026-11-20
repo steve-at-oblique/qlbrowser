@@ -7,7 +7,7 @@
 #include <qptr.h>
 #include <stddef.h>
 
-char _prog_name[] = "qlbrowse";
+char _prog_name[] = "qlbrowser";
 char *_endmsg = NULL;
 long _stack = 12288;
 static chanid_t console;
@@ -73,22 +73,28 @@ void tcp_close(long channel)
 int console_open(void)
 {
     QLRECT_t size, pixels;
-    QLRECT_t window = {512, 256, 0, 0};
+    QLRECT_t window;
     WM_wsiz_t limits;
-    int result;
+    int result, width_percent;
 
     /* Use the primary console already opened by the C runtime.
        A second console's pointer limits may be confined to the primary. */
     console = getchid(0);
     if (console < 0)
         return 0;
-    /* On SMSQ/E a standalone console can use the whole display. */
-    if (!iop_flim(console, -1, &limits) && limits.xsize > 0 && limits.ysize > 0) {
-        window.q_width = limits.xsize / 2;
-        window.q_height = limits.ysize;
-        window.q_x = limits.xorg + (limits.xsize - window.q_width) / 2;
-        window.q_y = limits.yorg;
+    /* Without pointer limits, use standard QL screen geometry. */
+    if (iop_flim(console, -1, &limits) || limits.xsize <= 0 || limits.ysize <= 0) {
+        limits.xsize = 512;
+        limits.ysize = 256;
+        limits.xorg = limits.yorg = 0;
     }
+    /* Q68 display modes in each width group share the same window ratio.
+       Keep width and X origin even for SD.WDEF and the pointer hit area. */
+    width_percent = limits.xsize <= 512 ? 80 : 50;
+    window.q_width = (limits.xsize * (long)width_percent / 100) & ~1L;
+    window.q_height = limits.ysize;
+    window.q_x = (limits.xorg + (limits.xsize - window.q_width) / 2) & ~1;
+    window.q_y = limits.yorg;
     sd_wdef(console, -1, 7, 1, &window);
     sd_setsz(console, -1, 0, 0);
     if (!sd_pos(console, -1, 1, 1) && !sd_pxenq(console, -1, &pixels) &&

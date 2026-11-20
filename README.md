@@ -1,141 +1,59 @@
 # qlbrowser
 
-A text browser for QDOS and SMSQ/E. The first milestone targets a 32 MB
-QIMSI Gold with QLTCPIP V0.1.14 on QIMSI USB SER2. The browser opens
-`TCP_host:port` directly and needs no environment variables, terminal
-database or resident browser launcher.
+A text browser for QDOS and SMSQ/E. It requires an installed, working
+`TCP_` driver. Refer to your device and driver documentation for setup.
+The browser opens `TCP_host:port` directly and needs no environment
+variables, terminal database or resident browser launcher.
+
+SNLTCP v1.0.0 support on QIMSI Gold over USB SER2 is coming soon.
 
 ## Build and install
 
 Run `make package` with `qdos-gcc` on your build machine.
 
-- `build/dist/qlbrowse` is the type-1 executable with its Q-emulator
+- `build/dist/qlbrowser` is the type-1 executable with its Q-emulator
   transfer header, using the same packager as QLVI. The header contains the
   dataspace from the linker.
-- `build/qdos/qlbrowse` is the raw QDOS GCC output with its XTcc trailer,
+- `build/qdos/qlbrowser` is the raw QDOS GCC output with its XTcc trailer,
   for transfer tools that recognize that format.
 
-For an SNL transfer, put the packaged `qlbrowse` in the host directory
-mapped to SNL drive 4. While SNL is active, copy it onto the QIMSI drive
-from SuperBASIC.
+Transfer the executable to a drive accessible from the QL. Use a transfer
+tool that interprets the packaged file's Q-emulator header and preserves
+the native executable type and dataspace.
+
+Launch it from SuperBASIC using the path where you installed it. For
+example, if you installed it on `win1_`:
 
 ```basic
-COPY snl4_qlbrowse TO win1_qlbrowse
+EX win1_qlbrowser
 ```
 
-Use a transfer that interprets the Q-emulator header and preserves the native
-executable type and dataspace. A byte-for-byte host filesystem copy of the
-wrapped file onto QIMSI storage alone can leave it unlaunchable.
+## HTTPS helper
 
-## Two-page QIMSI test
+HTTPS browsing requires the Python 3 helper in `tools/https_helper.py`.
+Run it on the Linux host on your network whose loopback interface your
+`TCP_` driver reaches at `127.0.0.1`. The browser connects to the helper
+at `127.0.0.1:8787` through that driver.
 
-Hardware verification passed on the 32 MB QIMSI Gold with SMSQ/E and
-QLTCPIP V0.1.14 over USB SER2. The user launched `EX win1_qlbrowse`,
-loaded page one, followed the link to page two, and returned to page one
-with Back.
-
-Two follow-up checks also passed on hardware. After a request returned
-HTTP 404, link `1` and Back still worked. Restarting the Linux TCP daemon
-with the browser open also allowed link `1` and Back to work without
-relaunching the browser or reinstalling the driver.
-
-1. Copy this repository's `fixture` directory to the Linux box. Run the
-   following there and leave it running. The two pages are available on
-   loopback, which is sufficient when the TCP daemon runs on the same box.
-
-   ```sh
-   python3 -m http.server 8000 --bind 127.0.0.1 --directory fixture
-   ```
-
-2. Reboot the QL with SNL disabled and stop the SNL host daemon before using
-   the same serial port. Start a fresh QLTCPIP daemon from its checkout on
-   Linux using the already tested QIMSI USB profile.
-
-   ```sh
-   python3 qltcpip_serial.py --trace
-   ```
-
-   The default configuration is `qltcpip_config.json`, for QIMSI native USB
-   on `/dev/ttyACM0`. Use `--config` with your working profile if it differs.
-
-3. Install the assembled V0.1.14 driver once per boot as described in
-   QLTCPIP's `docs/driver.md`. These commands assume your assembled driver
-   is already on `win1_` as `tcpdev`. Disconnect any open QLTerm session
-   before launching the browser.
-
-   ```basic
-   a=RESPR(4096)
-   LBYTES win1_tcpdev,a
-   CALL a
-   EX win1_qlbrowse
-   ```
-
-4. Enter `http://127.0.0.1:8000/index.html` at the browser prompt. Expect
-   **QL browser test - page one** and **[1] Open page two**. Enter `1`
-   to follow the link, `B` to return to page one, and `Q` to quit. Press
-   Return after each entry. The Linux HTTP log should show 200 responses for
-   `/index.html` and `/second.html`. Back restores page one from memory.
-   Here `127.0.0.1` refers to the Linux daemon host. To serve the fixture
-   on a separate Linux box, bind to its LAN address and use that address
-   in the URL.
-
-## Redirect and chunked-response hardware test
-
-The user verified this fixture on the QIMSI Gold with the updated browser.
-The redirect, chunked page, relative link, and Back sequence passed.
-
-Transfer the new executable and start the fixture on the Linux daemon host.
-Copy both `tools/http_fixture.py` and the `fixture` directory, keeping
-the same layout, then run from their parent directory.
+From the repository root on that host, run:
 
 ```sh
-python3 tools/http_fixture.py
-```
-
-After launching `EX win1_qlbrowse`, enter
-`http://127.0.0.1:8000/start`. The browser should display page one at
-`/pages/index.html`, reached through a redirect and decoded from a chunked
-response. Enter `1` to reach page two in the same directory. Enter `B`
-to restore page one at its final URL. The fixture log should show `/start`
-once, followed by requests for page one and page two.
-
-## Host-assisted HTTPS on Linux
-
-The user verified on the QIMSI Gold that the NPR Text-Only homepage loads,
-numbered headlines open, and Back returns to the headline list over
-repeated attempts. With the NPR page still open, the user restarted the
-Linux QLTCPIP daemon and then the HTTPS helper. Headline navigation and
-Back worked again without relaunching qlbrowse.
-
-Copy `tools/https_helper.py` to `~/dev/qlbrowser/tools/` on the **same
-Linux box that runs the QLTCPIP daemon**. Python 3 is sufficient. Leave
-the daemon running and start the helper in a separate terminal.
-
-```sh
-cd ~/dev/qlbrowser
 python3 tools/https_helper.py
 ```
 
-The helper listens only on Linux loopback at `127.0.0.1:8787`. It uses
-the host's trusted CA store and checks the remote certificate and hostname.
-It accepts HTTPS GET requests from qlbrowse and sends the response over
-the existing QL-to-host serial link. TLS protects the Linux-to-site leg.
-Use `--ca-file PATH` to add a CA for a private HTTPS site.
-
-On the QL, install the updated executable and run `EX win1_qlbrowse`.
-Enter `https://text.npr.org/`, choose a numbered headline, and enter
-`B` to return. You can also start with `http://text.npr.org/` to
-exercise its redirect to HTTPS. Plain HTTP still goes straight through
-QLTCPIP, including the port-8000 fixture.
+Leave the helper running while you browse. [CNN Lite](https://lite.cnn.com/)
+and [NPR Text-Only](https://text.npr.org/) both work well with qlbrowser.
+The helper checks remote certificates and hostnames using the host's
+trusted CA store. TLS protects the
+connection from the helper to the website. Use `--ca-file PATH` to add a CA
+for a private HTTPS site. Plain HTTP works through the `TCP_` driver
+without the helper.
 
 ## BBC News RSS and articles
 
-The user confirmed that the BBC RSS milestone worked on the QIMSI Gold.
-The desktop test also verified opening a live BBC article from the feed
-and returning with Back.
+The browser supports RSS feeds like the BBC RSS feed.
 
-Update both the executable and the Linux HTTPS helper, then restart the
-helper using the instructions above. On the QL, enter
+With the HTTPS helper running, enter
 `https://feeds.bbci.co.uk/news/rss.xml`. The helper converts RSS 2.0 to
 HTML with numbered headlines and summaries. Choose a written story
 (video entries also appear in the BBC feed), then press `B` to return.
@@ -148,26 +66,26 @@ the helper's input or decoded size limit return a size error.
 
 ## Controls and scope
 
-On SMSQ/E the browser queries the available display from its primary console and derives the number of
-text columns and page rows from the console's character dimensions. A
-classic QDOS display uses the standard 512 x 256 geometry. HTML prose
+The browser centers its window horizontally and uses the available display
+height. It uses standard 512 × 256 geometry if display limits are unavailable.
+On QIMSI Gold and Q68, the window width depends on the display mode.
+
+| Display mode | Resolution | Window width |
+| --- | --- | --- |
+| Normal QL Mode 4 | 512 × 256 | 80% |
+| Large QL Mode 4 | 1024 × 768 | 50% |
+| 8-bit Aurora | 1024 × 768 | 50% |
+| Small 16-bit | 512 × 256 | 80% |
+| Medium 16-bit | 512 × 384 | 80% |
+| Large 16-bit | 1024 × 512 | 50% |
+
+The browser measures text columns and page rows from the console. HTML prose
 wraps at word boundaries, with hard breaks for words longer than a line.
-On SMSQ/E the centered console uses half the available screen width for
-all pages. The user verified this layout on the QIMSI Gold with qlbrowse
-0.8.0 and found the shorter lines easier to follow in both headline lists
-and articles.
 Link numbers stay with their first word when they fit together on a line.
 URLs can be up to 1,023 characters long.
 Paragraphs and linked list entries have blank lines between them. A link
 number replaces the bullet when the link starts a list item. The QL console
 underlines link numbers in lists and the full text of inline links.
-The user verified the improved article and linked-list layouts on the
-QIMSI Gold.
-The user also verified the headline punctuation fix in qlbrowse 0.7.2
-and reported that `68k.news` redirected to `http://frogfind.com/news`.
-The user verified word wrapping and full display coverage in Large Mode 4
-on the QIMSI Gold. The primary console showed the full NPR Text-Only
-homepage at once.
 
 ### Navigation
 
@@ -182,8 +100,8 @@ homepage at once.
 | Quit | `Q` and Return | |
 
 Use mouse controls and the immediate arrow and Space shortcuts at an empty
-command prompt. Mouse controls use the Pointer Environment. Wheel paging was
-verified on QIMSI Gold. Alt+Up and Alt+Down also page at an empty prompt.
+command prompt. Mouse controls use the Pointer Environment. Alt+Up and
+Alt+Down also page at an empty prompt.
 
 Back restores the previous page from memory, including its scroll position
 and links. A second consecutive Back refetches the older page. Refresh
@@ -203,19 +121,10 @@ follows up to five HTTP or HTTPS redirects, and decodes chunked responses. The H
 with bounded decoding. In-page fragment navigation is outside the current
 scope.
 
-Run `make test` for a loopback smoke test using the same browser core with
-host sockets. It checks the executable header, the two-page navigation
-sequence through a redirect and chunked response, Refresh preserving history,
-cached Back, recovery from HTTP errors, HTTPS certificate hostname rejection,
-larger pages, RSS navigation, and article extraction. The test needs OpenSSL
-to generate a temporary certificate. The QIMSI tests check the QDOS console,
-QDOS I/O traps and USB driver path.
-
 ## License
 
 Copyright 2026 Steve Jennen. See the [BSD 2-Clause License](LICENSE).
 
 The executable packager in `tools/package_qdos.py` comes from Steve
-Jennen's QLVI project and retains its original notice. QLTCPIP is a
-separate project. The QDOS build uses the QDOS GCC toolchain and its
-runtime libraries.
+Jennen's QLVI project and retains its original notice. The QDOS build uses
+the QDOS GCC toolchain and its runtime libraries.
